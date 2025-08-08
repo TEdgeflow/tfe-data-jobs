@@ -7,9 +7,9 @@ from supabase import create_client, Client
 # ========= ENV VARS (Railway) =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-# Optional: cap number of symbols to avoid super long runs (e.g., "150")
 LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "0"))
 
+print("[boot] HAS_URL=", bool(SUPABASE_URL), "HAS_KEY=", bool(SUPABASE_KEY))
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
 
@@ -22,14 +22,12 @@ def iso_from_ms(ms: int) -> str:
     return datetime.fromtimestamp(ms/1000, tz=timezone.utc).isoformat()
 
 def get_perp_symbols_usdt():
-    """Fetch ALL USDT perpetual symbols currently trading on Binance Futures."""
     url = f"{BINANCE_FAPI}/fapi/v1/exchangeInfo"
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     info = r.json()
     syms = []
     for s in info.get("symbols", []):
-        # filter: PERPETUAL, quote USDT, TRADING
         if (
             s.get("contractType") == "PERPETUAL"
             and s.get("quoteAsset") == "USDT"
@@ -43,7 +41,6 @@ def get_perp_symbols_usdt():
     return syms
 
 def fetch_funding(symbol: str):
-    """Latest funding rate item."""
     url = f"{BINANCE_FAPI}/fapi/v1/fundingRate"
     r = requests.get(url, params={"symbol": symbol, "limit": 1}, timeout=10)
     r.raise_for_status()
@@ -52,17 +49,14 @@ def fetch_funding(symbol: str):
         return None
     item = data[-1]
     return {
-        "ts": iso_from_ms(int(item["fundingTime"])),
+        # match your table: funding_time, funding_rate
+        "funding_time": iso_from_ms(int(item["fundingTime"])),
         "venue": VENUE,
         "symbol": symbol,
-        "rate": float(item["fundingRate"]),
+        "funding_rate": float(item["fundingRate"]),
     }
 
 def fetch_open_interest(symbol: str):
-    """
-    Latest open interest snapshot (5m). Prefer USD value.
-    Endpoint returns: sumOpenInterest, sumOpenInterestValue, timestamp
-    """
     url = f"{BINANCE_FAPI}/futures/data/openInterestHist"
     r = requests.get(url, params={"symbol": symbol, "period": "5m", "limit": 1}, timeout=10)
     r.raise_for_status()
@@ -75,17 +69,17 @@ def fetch_open_interest(symbol: str):
         oi_usd = float(item.get("sumOpenInterestValue")) if item.get("sumOpenInterestValue") is not None else None
     except Exception:
         oi_usd = None
-    # Fallback to contracts if USD not provided
     if oi_usd is None:
         try:
             oi_usd = float(item.get("sumOpenInterest"))
         except Exception:
             oi_usd = 0.0
     return {
+        # match your table: ts, oi_value
         "ts": ts,
         "venue": VENUE,
         "symbol": symbol,
-        "oi_usd": oi_usd,
+        "oi_value": oi_usd,
     }
 
 def upsert(table: str, rows: list, conflict_cols: list):
@@ -100,38 +94,33 @@ def run():
     oi_rows = []
 
     for i, sym in enumerate(symbols, start=1):
-        # Fetch funding
         try:
             f = fetch_funding(sym)
             if f: funding_rows.append(f)
         except Exception as e:
             print(f"[funding] {sym} error: {e}")
 
-        # Fetch open interest
         try:
             oi = fetch_open_interest(sym)
             if oi: oi_rows.append(oi)
         except Exception as e:
             print(f"[oi] {sym} error: {e}")
 
-        # Gentle pacing to respect rate limits
-        time.sleep(0.06)  # ~16 req/sec combined across endpoints
+        time.sleep(0.06)
 
-        # Batch-upsert every 50 symbols to keep memory and logs tame
         if i % 50 == 0:
             if funding_rows:
                 print(f"Upserting {len(funding_rows)} funding rows (batch)…")
-                upsert("funding_rates", funding_rows, ["ts","venue","symbol"])
+                upsert("funding_rates", funding_rows, ["funding_time","venue","symbol"])
                 funding_rows.clear()
             if oi_rows:
                 print(f"Upserting {len(oi_rows)} OI rows (batch)…")
                 upsert("open_interest", oi_rows, ["ts","venue","symbol"])
                 oi_rows.clear()
 
-    # Final flush
     if funding_rows:
         print(f"Upserting {len(funding_rows)} funding rows (final)…")
-        upsert("funding_rates", funding_rows, ["ts","venue","symbol"])
+        upsert("funding_rates", funding_rows, ["funding_time","venue","symbol"])
     if oi_rows:
         print(f"Upserting {len(oi_rows)} OI rows (final)…")
         upsert("open_interest", oi_rows, ["ts","venue","symbol"])
