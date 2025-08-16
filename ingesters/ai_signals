@@ -1,0 +1,55 @@
+# ai_engine.py
+import os
+from supabase import create_client
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def latest_oi(symbol):
+    q = sb.rpc("exec_sql", {"sql": f"""
+      select oi_time, open_interest
+      from open_interest
+      where symbol = '{symbol}'
+      order by oi_time desc
+      limit 2
+    """})
+    return q
+
+def run_ai_rules(symbols):
+    alerts = []
+    for s in symbols:
+        # OI momentum rule (very simple)
+        res = sb.table("open_interest").select("oi_time, open_interest").eq("symbol", s).order("oi_time", desc=True).limit(2).execute()
+        data = res.data or []
+        if len(data) == 2:
+            curr = float(data[0]["open_interest"] or 0)
+            prev = float(data[1]["open_interest"] or 0)
+            if prev > 0 and (curr - prev) / prev >= 0.10:  # +10% OI in last interval
+                alerts.append({
+                    "symbol": s,
+                    "horizon": "5m",
+                    "action": "INFO",
+                    "confidence": 0.8,
+                    "score": 70,
+                    "detail": {"rule": "oi_jump_10pct", "curr": curr, "prev": prev}
+                })
+        # Unlock proximity rule (within 3 days)
+        res2 = sb.table("token_unlocks").select("unlock_time, amount_usd, pct_circ").eq("symbol", s)\
+               .gte("unlock_time", "now()").lte("unlock_time", "now() + interval '3 days'").order("unlock_time").limit(1).execute()
+        if res2.data:
+            u = res2.data[0]
+            alerts.append({
+                "symbol": s,
+                "horizon": "1d",
+                "action": "INFO",
+                "confidence": 0.9,
+                "score": 60,
+                "detail": {"rule": "unlock_soon", "unlock_time": u["unlock_time"], "pct_circ": u.get("pct_circ")}
+            })
+    if alerts:
+        sb.table("ai_signals").insert(alerts).execute()
+
+if __name__ == "__main__":
+    run_ai_rules(["BTCUSDT","ETHUSDT"])
+    print("ai rules done.")
