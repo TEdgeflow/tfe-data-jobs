@@ -1,0 +1,4 @@
+symbol,unlock_time,unlock_type,amount_tokens,amount_usd,pct_circ,source
+OP,2025-09-01T00:00:00Z,CLIFF,123456,,3.5,manual
+APT,2025-09-05T00:00:00Z,LINEAR,987654,,2.1,manual
+ARB,2025-09-10T12:00:00Z,OTHER,3000000,,1.2,manual
