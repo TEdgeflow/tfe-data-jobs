@@ -18,9 +18,11 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 VENUE = "binance"
 BINANCE_FAPI = "https://fapi.binance.com"
 
+# Convert milliseconds to ISO timestamp
 def iso_from_ms(ms: int) -> str:
     return datetime.fromtimestamp(ms/1000, tz=timezone.utc).isoformat()
 
+# Get all USDT perpetual pairs
 def get_perp_symbols_usdt():
     url = f"{BINANCE_FAPI}/fapi/v1/exchangeInfo"
     r = requests.get(url, timeout=15)
@@ -40,6 +42,7 @@ def get_perp_symbols_usdt():
     print(f"[symbols] Found {len(syms)} USDT-PERP symbols.")
     return syms
 
+# Fetch funding rate
 def fetch_funding(symbol: str):
     url = f"{BINANCE_FAPI}/fapi/v1/fundingRate"
     r = requests.get(url, params={"symbol": symbol, "limit": 1}, timeout=10)
@@ -49,13 +52,13 @@ def fetch_funding(symbol: str):
         return None
     item = data[-1]
     return {
-        # match your table: funding_time, funding_rate
         "funding_time": iso_from_ms(int(item["fundingTime"])),
         "venue": VENUE,
         "symbol": symbol,
         "funding_rate": float(item["fundingRate"]),
     }
 
+# Fetch open interest
 def fetch_open_interest(symbol: str):
     url = f"{BINANCE_FAPI}/futures/data/openInterestHist"
     r = requests.get(url, params={"symbol": symbol, "period": "5m", "limit": 1}, timeout=10)
@@ -75,13 +78,14 @@ def fetch_open_interest(symbol: str):
         except Exception:
             oi_usd = 0.0
     return {
-        # match your table: ts, oi_value
-        "ts": ts,
+        # ✅ match DB: oi_time + open_interest
+        "oi_time": ts,
         "venue": VENUE,
         "symbol": symbol,
-        "oi_value": oi_usd,
+        "open_interest": oi_usd,
     }
 
+# Generic upsert
 def upsert(table: str, rows: list, conflict_cols: list):
     if not rows:
         return
@@ -108,6 +112,7 @@ def run():
 
         time.sleep(0.06)
 
+        # Batch upsert every 50 rows
         if i % 50 == 0:
             if funding_rows:
                 print(f"Upserting {len(funding_rows)} funding rows (batch)…")
@@ -115,17 +120,19 @@ def run():
                 funding_rows.clear()
             if oi_rows:
                 print(f"Upserting {len(oi_rows)} OI rows (batch)…")
-                upsert("open_interest", oi_rows, ["ts","venue","symbol"])
+                upsert("open_interest", oi_rows, ["oi_time","venue","symbol"])
                 oi_rows.clear()
 
+    # Final flush
     if funding_rows:
         print(f"Upserting {len(funding_rows)} funding rows (final)…")
         upsert("funding_rates", funding_rows, ["funding_time","venue","symbol"])
     if oi_rows:
         print(f"Upserting {len(oi_rows)} OI rows (final)…")
-        upsert("open_interest", oi_rows, ["ts","venue","symbol"])
+        upsert("open_interest", oi_rows, ["oi_time","venue","symbol"])
 
     print("Done.")
 
 if __name__ == "__main__":
     run()
+
