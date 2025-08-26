@@ -1,5 +1,6 @@
-supabase>=2.6.0
+supabase-py>=2.6.0
 requests
 python-dotenv
+
 
 
