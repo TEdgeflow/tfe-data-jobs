@@ -1,99 +1,104 @@
-import os
-import time
-import requests
+import os, time, requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ======== ENV VARS ========
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "50"))
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
+
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BINANCE_API = "https://fapi.binance.com"
+BINANCE_FAPI = "https://fapi.binance.com/fapi/v1"
 
-# keep CVD state per symbol
-cvd_state = {}
-
-def iso_now():
-    return datetime.now(timezone.utc).isoformat()
-
-def fetch_trades(symbol, limit=1000):
-    """Fetch recent trades from Binance futures"""
-    url = f"{BINANCE_API}/fapi/v1/trades"
-    resp = requests.get(url, params={"symbol": symbol, "limit": limit})
+# ========= FETCH SYMBOLS =========
+def get_perp_symbols():
+    resp = requests.get(f"{BINANCE_FAPI}/exchangeInfo")
     resp.raise_for_status()
-    return resp.json()
-
-def fetch_funding(symbol):
-    """Fetch latest funding rate"""
-    url = f"{BINANCE_API}/fapi/v1/fundingRate"
-    resp = requests.get(url, params={"symbol": symbol, "limit": 1})
-    resp.raise_for_status()
-    data = resp.json()
-    return float(data[0]["fundingRate"]) if data else None
-
-def fetch_oi(symbol):
-    """Fetch latest open interest"""
-    url = f"{BINANCE_API}/fapi/v1/openInterest"
-    resp = requests.get(url, params={"symbol": symbol})
-    resp.raise_for_status()
-    data = resp.json()
-    return float(data["openInterest"]) if "openInterest" in data else None
-
-def process_trades(symbol, trades):
-    """Calculate delta and update cumulative delta"""
-    buy_vol, sell_vol = 0, 0
-    for t in trades:
-        qty = float(t["qty"])
-        if t["isBuyerMaker"]:  # SELL order
-            sell_vol += qty
-        else:  # BUY order
-            buy_vol += qty
-
-    delta = buy_vol - sell_vol
-    prev_cvd = cvd_state.get(symbol, 0)
-    cvd = prev_cvd + delta
-    cvd_state[symbol] = cvd
-    return buy_vol, sell_vol, delta, cvd
-
-def upsert(symbol, buy_vol, sell_vol, delta, cvd, funding, oi):
-    row = {
-        "ts": iso_now(),
-        "symbol": symbol,
-        "buys_volume": buy_vol,
-        "sells_volume": sell_vol,
-        "delta": delta,
-        "cvd": cvd,
-        "funding_rate": funding,
-        "open_interest": oi
-    }
-    sb.table("orderflow_cvd").upsert(row).execute()
-    print(f"[upsert] {symbol} Δ={delta:.2f} CVD={cvd:.2f} FR={funding} OI={oi}")
-
-def main():
-    symbols = [s["symbol"] for s in requests.get(
-        f"{BINANCE_API}/fapi/v1/exchangeInfo").json()["symbols"]
+    symbols = [
+        s["symbol"] for s in resp.json()["symbols"]
         if s["contractType"] == "PERPETUAL" and s["quoteAsset"] == "USDT"
     ]
+    return symbols[:LIMIT_SYMBOLS]
 
-    print(f"[symbols] Tracking {len(symbols)} perp pairs...")
+# ========= FETCH ORDERFLOW (buys, sells, VWAP) =========
+def fetch_orderflow(symbol):
+    trades = requests.get(f"{BINANCE_FAPI}/aggTrades", params={"symbol": symbol, "limit": 1000})
+    trades.raise_for_status()
+    data = trades.json()
+
+    buys, sells, vwap_num, vwap_den = 0, 0, 0, 0
+    for t in data:
+        qty = float(t["q"])
+        price = float(t["p"])
+        if t["m"]:  # buyer is market maker → sell
+            sells += qty
+        else:       # aggressive buy
+            buys += qty
+        vwap_num += price * qty
+        vwap_den += qty
+
+    delta = buys - sells
+    vwap = vwap_num / vwap_den if vwap_den > 0 else None
+    return buys, sells, delta, vwap
+
+# ========= FETCH FUNDING + OI =========
+def fetch_funding_and_oi(symbol):
+    try:
+        funding_resp = requests.get(f"{BINANCE_FAPI}/premiumIndex", params={"symbol": symbol})
+        funding_resp.raise_for_status()
+        funding_rate = float(funding_resp.json().get("lastFundingRate", 0))
+
+        oi_resp = requests.get(f"{BINANCE_FAPI}/openInterest", params={"symbol": symbol})
+        oi_resp.raise_for_status()
+        open_interest = float(oi_resp.json().get("openInterest", 0))
+
+        return funding_rate, open_interest
+    except Exception as e:
+        print(f"[warn] Funding/OI error for {symbol}:", e)
+        return 0.0, 0.0
+
+# ========= UPSERT =========
+cvd_tracker = {}
+
+def upsert_orderflow(symbol, buys, sells, delta, vwap, funding_rate, open_interest):
+    prev_cvd = cvd_tracker.get(symbol, 0)
+    cvd = prev_cvd + delta
+    cvd_tracker[symbol] = cvd
+
+    row = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "symbol": symbol,
+        "buys_volume": buys,
+        "sells_volume": sells,
+        "delta": delta,
+        "cvd": cvd,
+        "funding_rate": funding_rate,
+        "open_interest": open_interest,
+        "vwap": vwap
+    }
+
+    sb.table("orderflow_cvd").upsert(row).execute()
+    print(f"[upsert] {symbol} delta={delta:.2f} cvd={cvd:.2f} vwap={vwap:.2f if vwap else 0}")
+
+# ========= MAIN LOOP =========
+def main():
+    symbols = get_perp_symbols()
+    print(f"[symbols] Found {len(symbols)} USDT-PERP symbols.")
 
     while True:
-        try:
-            for sym in symbols:
-                try:
-                    trades = fetch_trades(sym, limit=1000)
-                    buy_vol, sell_vol, delta, cvd = process_trades(sym, trades)
-                    funding = fetch_funding(sym)
-                    oi = fetch_oi(sym)
-                    upsert(sym, buy_vol, sell_vol, delta, cvd, funding, oi)
-                except Exception as e:
-                    print(f"[error] {sym}: {e}")
+        for sym in symbols:
+            try:
+                buys, sells, delta, vwap = fetch_orderflow(sym)
+                funding_rate, open_interest = fetch_funding_and_oi(sym)
+                upsert_orderflow(sym, buys, sells, delta, vwap, funding_rate, open_interest)
+            except Exception as e:
+                print(f"[error] {sym}:", e)
 
-            time.sleep(60)  # every 1 min
-        except Exception as e:
-            print("Fatal loop error:", e)
-            time.sleep(10)
+        time.sleep(60)  # update every 1 minute
 
 if __name__ == "__main__":
     main()
