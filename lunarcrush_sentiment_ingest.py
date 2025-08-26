@@ -1,112 +1,92 @@
 import os
+import time
 import requests
 from supabase import create_client, Client
-from datetime import datetime, timezone
 
-# ===== Supabase Setup =====
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY or not LUNAR_API_KEY:
-    raise RuntimeError("Missing SUPABASE_URL, SUPABASE_KEY, or LUNAR_API_KEY")
+    raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, LUNAR_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 BASE_URL = "https://lunarcrush.com/api4/public"
+HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
-# ===== Fetch Functions =====
+# ========= FETCH FUNCTIONS =========
+
+def fetch_top_symbols(limit=20):
+    """Fetch top mentioned coins (default top 20)."""
+    url = f"{BASE_URL}/coins/list/v1"
+    params = {"limit": limit, "sort": "market_cap_rank", "desc": True}
+    resp = requests.get(url, headers=HEADERS, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+    return [item["symbol"] for item in data.get("data", [])]
+
 
 def fetch_sentiment(symbol="BTC"):
+    """Fetch sentiment metrics for a given symbol."""
     url = f"{BASE_URL}/coins/list/v1"
     params = {"symbol": symbol, "limit": 1}
     resp = requests.get(url, headers=HEADERS, params=params)
+    
+    # Rate-limit handling
+    if resp.status_code == 429:
+        print(f"[rate-limit] Sleeping 10s before retry for {symbol}...")
+        time.sleep(10)
+        resp = requests.get(url, headers=HEADERS, params=params)
+
     resp.raise_for_status()
-    return resp.json().get("data", [])
+    data = resp.json()
+    if "data" not in data or not data["data"]:
+        raise ValueError(f"No sentiment data returned for {symbol}")
+    return data["data"][0]
 
-def fetch_news():
-    url = f"{BASE_URL}/category/cryptocurrencies/news/v1"
-    params = {"limit": 10}
-    resp = requests.get(url, headers=HEADERS, params=params)
-    resp.raise_for_status()
-    return resp.json().get("data", [])
 
-def fetch_trends(symbol="BTC"):
-    url = f"{BASE_URL}/influencers/list/v1"
-    params = {"symbol": symbol, "limit": 5}
-    resp = requests.get(url, headers=HEADERS, params=params)
-    resp.raise_for_status()
-    return resp.json().get("data", [])
+# ========= UPSERT FUNCTION =========
 
-# ===== Upsert Functions =====
+def upsert_sentiment(row, symbol):
+    """Upsert row into Supabase social_sentiment table."""
+    record = {
+        "symbol": symbol,
+        "galaxy_score": row.get("galaxy_score"),
+        "alt_rank": row.get("alt_rank"),
+        "social_volume": row.get("social_volume_24h"),
+        "social_score": row.get("social_score"),
+        "url_shares": row.get("url_shares", 0),
+        "sentiment": row.get("sentiment", 0)
+    }
+    print(f"[upsert] {symbol}: {record}")
+    sb.table("social_sentiment").upsert(record).execute()
 
-def upsert_sentiment(data):
-    rows = []
-    for d in data:
-        rows.append({
-            "symbol": d.get("symbol"),
-            "galaxy_score": d.get("galaxy_score"),
-            "alt_rank": d.get("alt_rank"),
-            "social_volume": d.get("social_volume_24h"),
-            "social_score": d.get("average_sentiment"),  # mapped to social_score
-            "url_shares": d.get("url_shares"),
-            "sentiment": d.get("sentiment")
-        })
-    if rows:
-        sb.table("social_sentiment").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} sentiment rows")
 
-def upsert_news(data):
-    rows = []
-    for d in data:
-        rows.append({
-            "symbol": "crypto",  # news may not always have symbol
-            "post_title": d.get("post_title"),
-            "post_link": d.get("post_link"),
-            "post_type": d.get("post_type"),
-            "source": d.get("creator_name"),
-            "post_sentiment": d.get("post_sentiment"),
-            "interactions": d.get("interactions_total")
-        })
-    if rows:
-        sb.table("social_news").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} news rows")
-
-def upsert_trends(data, symbol="BTC"):
-    rows = []
-    for d in data:
-        rows.append({
-            "symbol": symbol,
-            "influencer": d.get("influencer_name"),
-            "followers": d.get("followers"),
-            "interactions": d.get("interactions_total"),
-            "posts_active": d.get("posts_active"),
-            "posts_created": d.get("posts_created"),
-            "follower_change": d.get("followers_change")
-        })
-    if rows:
-        sb.table("social_trends").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} trend rows")
-
-# ===== Main Runner =====
+# ========= MAIN LOOP =========
 
 def main():
-    print("Starting LunarCrush Ingestion...")
+    print("Starting LunarCrush Sentiment Ingestion...")
 
-    # Sentiment
-    sentiment_data = fetch_sentiment("BTC")
-    upsert_sentiment(sentiment_data)
+    try:
+        symbols = fetch_top_symbols(limit=20)
+        print(f"[symbols] Found {len(symbols)} top symbols: {symbols}")
+    except Exception as e:
+        print("[error] Could not fetch top symbols:", e)
+        return
 
-    # News
-    news_data = fetch_news()
-    upsert_news(news_data)
+    for sym in symbols:
+        try:
+            data = fetch_sentiment(sym)
+            upsert_sentiment(data, sym)
+            time.sleep(3)  # prevent hitting 429
+        except Exception as e:
+            print(f"[error] {sym}: {e}")
+            continue
 
-    # Trends
-    trends_data = fetch_trends("BTC")
-    upsert_trends(trends_data, symbol="BTC")
+    print("Done LunarCrush ingestion ✅")
 
-    print("✅ Done with LunarCrush ingestion.")
 
 if __name__ == "__main__":
     main()
