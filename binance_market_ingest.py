@@ -14,7 +14,6 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-VENUE = "binance"
 BINANCE_FAPI = "https://fapi.binance.com"
 
 def iso_now() -> str:
@@ -39,11 +38,10 @@ def fetch_market_data(symbols):
             d = r.json()
             rows.append({
                 "ts": iso_now(),
-                "venue": VENUE,
                 "symbol": sym,
                 "price": float(d["lastPrice"]),
-                "volume_24h": float(d["quoteVolume"]),          # ✅ matches table
-                "price_change_24h": float(d["priceChangePercent"]),  # ✅ matches table
+                "volume_24h": float(d["quoteVolume"]),          # ✅ matches Supabase column
+                "price_change_24h": float(d["priceChangePercent"]),  # ✅ matches Supabase column
             })
         except Exception as e:
             print(f"[error] {sym}: {e}")
@@ -66,5 +64,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
