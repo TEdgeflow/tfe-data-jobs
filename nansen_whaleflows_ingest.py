@@ -4,7 +4,6 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 NANSEN_API_KEY = os.getenv("NANSEN_API_KEY")
@@ -14,14 +13,10 @@ if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ========= Nansen Endpoint =========
 NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
 
 def fetch_whale_flows():
-    headers = {
-        "apiKey": NANSEN_API_KEY,       # ✅ Pioneer plan expects this
-        "Content-Type": "application/json"
-    }
+    headers = {"apiKey": NANSEN_API_KEY, "Content-Type": "application/json"}
     body = {
         "parameters": {
             "smFilter": ["180D Smart Trader", "Fund", "Smart Trader"],
@@ -31,21 +26,22 @@ def fetch_whale_flows():
         }
     }
     resp = requests.post(NANSEN_URL, headers=headers, json=body)
-    print("[debug] status", resp.status_code, resp.text[:200])
+    print("[debug] status", resp.status_code, resp.text[:300])
     resp.raise_for_status()
     return resp.json()
 
 def upsert_whale_flows(data):
     rows = []
-    for d in data.get("data", []):
+    # Nansen returns a list directly, not { "data": [...] }
+    for d in data:  
         rows.append({
             "ts": datetime.now(timezone.utc).isoformat(),
-            "token": d.get("tokenSymbol"),
+            "token": d.get("symbol"),
             "chain": d.get("chain"),
-            "inflow_usd": d.get("inflowUsd"),
-            "outflow_usd": d.get("outflowUsd"),
-            "netflow_usd": d.get("netflowUsd"),
-            "sm_category": d.get("smCategory")
+            "inflow_usd": d.get("volume24hUSD"),   # using 24h as inflow proxy
+            "outflow_usd": None,                   # Nansen doesn’t provide directly
+            "netflow_usd": None,                   # could be computed if available
+            "sm_category": ",".join(d.get("sectors", [])) if d.get("sectors") else None
         })
     if rows:
         sb.table("nansen_whaleflows").upsert(rows).execute()
@@ -59,7 +55,7 @@ def main():
             print("Done whale flows.")
         except Exception as e:
             print("Error whale flows job:", e)
-        time.sleep(3600)  # every 1 hour
+        time.sleep(3600)
 
 if __name__ == "__main__":
     main()
