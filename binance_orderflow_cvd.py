@@ -24,10 +24,25 @@ def fetch_trades(symbol, limit=1000):
     resp.raise_for_status()
     return resp.json()
 
+def fetch_funding(symbol):
+    """Fetch latest funding rate"""
+    url = f"{BINANCE_API}/fapi/v1/fundingRate"
+    resp = requests.get(url, params={"symbol": symbol, "limit": 1})
+    resp.raise_for_status()
+    data = resp.json()
+    return float(data[0]["fundingRate"]) if data else None
+
+def fetch_oi(symbol):
+    """Fetch latest open interest"""
+    url = f"{BINANCE_API}/fapi/v1/openInterest"
+    resp = requests.get(url, params={"symbol": symbol})
+    resp.raise_for_status()
+    data = resp.json()
+    return float(data["openInterest"]) if "openInterest" in data else None
+
 def process_trades(symbol, trades):
     """Calculate delta and update cumulative delta"""
     buy_vol, sell_vol = 0, 0
-
     for t in trades:
         qty = float(t["qty"])
         if t["isBuyerMaker"]:  # SELL order
@@ -36,28 +51,26 @@ def process_trades(symbol, trades):
             buy_vol += qty
 
     delta = buy_vol - sell_vol
-
-    # update CVD state for this symbol
     prev_cvd = cvd_state.get(symbol, 0)
     cvd = prev_cvd + delta
     cvd_state[symbol] = cvd
-
     return buy_vol, sell_vol, delta, cvd
 
-def upsert(symbol, buy_vol, sell_vol, delta, cvd):
+def upsert(symbol, buy_vol, sell_vol, delta, cvd, funding, oi):
     row = {
         "ts": iso_now(),
         "symbol": symbol,
         "buys_volume": buy_vol,
         "sells_volume": sell_vol,
         "delta": delta,
-        "cvd": cvd
+        "cvd": cvd,
+        "funding_rate": funding,
+        "open_interest": oi
     }
     sb.table("orderflow_cvd").upsert(row).execute()
-    print(f"[upsert] {symbol} Δ={delta:.2f} CVD={cvd:.2f}")
+    print(f"[upsert] {symbol} Δ={delta:.2f} CVD={cvd:.2f} FR={funding} OI={oi}")
 
 def main():
-    # get tradable perpetual pairs
     symbols = [s["symbol"] for s in requests.get(
         f"{BINANCE_API}/fapi/v1/exchangeInfo").json()["symbols"]
         if s["contractType"] == "PERPETUAL" and s["quoteAsset"] == "USDT"
@@ -71,7 +84,9 @@ def main():
                 try:
                     trades = fetch_trades(sym, limit=1000)
                     buy_vol, sell_vol, delta, cvd = process_trades(sym, trades)
-                    upsert(sym, buy_vol, sell_vol, delta, cvd)
+                    funding = fetch_funding(sym)
+                    oi = fetch_oi(sym)
+                    upsert(sym, buy_vol, sell_vol, delta, cvd, funding, oi)
                 except Exception as e:
                     print(f"[error] {sym}: {e}")
 
@@ -82,5 +97,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
