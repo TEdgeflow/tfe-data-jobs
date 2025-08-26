@@ -42,8 +42,8 @@ def fetch_market_data(symbols):
                 "venue": VENUE,
                 "symbol": sym,
                 "price": float(d["lastPrice"]),
-                "volume": float(d["quoteVolume"]),   # in USDT
-                "price_change_pct": float(d["priceChangePercent"]),
+                "volume_24h": float(d["quoteVolume"]),          # ✅ matches table
+                "price_change_24h": float(d["priceChangePercent"]),  # ✅ matches table
             })
         except Exception as e:
             print(f"[error] {sym}: {e}")
@@ -66,4 +66,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
