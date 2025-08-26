@@ -3,54 +3,45 @@ import time
 import requests
 from supabase import create_client, Client
 
-# ========= ENV VARS =========
+# ========= ENV =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY or not LUNAR_API_KEY:
-    raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, LUNAR_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://lunarcrush.com/api4/public"
 HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
-# ========= FETCH FUNCTIONS =========
+# Safe request with backoff
+def safe_request(url, params=None):
+    for attempt in range(5):
+        resp = requests.get(url, headers=HEADERS, params=params)
+        if resp.status_code == 429:
+            wait = 10 * (attempt + 1)
+            print(f"[rate-limit] Sleeping {wait}s...")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise RuntimeError("Failed after 5 retries")
 
+# Fetch top coins
 def fetch_top_symbols(limit=20):
-    """Fetch top mentioned coins (default top 20)."""
     url = f"{BASE_URL}/coins/list/v1"
     params = {"limit": limit, "sort": "market_cap_rank", "desc": True}
-    resp = requests.get(url, headers=HEADERS, params=params)
-    resp.raise_for_status()
-    data = resp.json()
+    data = safe_request(url, params)
     return [item["symbol"] for item in data.get("data", [])]
 
-
-def fetch_sentiment(symbol="BTC"):
-    """Fetch sentiment metrics for a given symbol."""
+# Fetch sentiment for a coin
+def fetch_sentiment(symbol):
     url = f"{BASE_URL}/coins/list/v1"
     params = {"symbol": symbol, "limit": 1}
-    resp = requests.get(url, headers=HEADERS, params=params)
-    
-    # Rate-limit handling
-    if resp.status_code == 429:
-        print(f"[rate-limit] Sleeping 10s before retry for {symbol}...")
-        time.sleep(10)
-        resp = requests.get(url, headers=HEADERS, params=params)
-
-    resp.raise_for_status()
-    data = resp.json()
-    if "data" not in data or not data["data"]:
-        raise ValueError(f"No sentiment data returned for {symbol}")
+    data = safe_request(url, params)
     return data["data"][0]
 
-
-# ========= UPSERT FUNCTION =========
-
+# Insert into Supabase
 def upsert_sentiment(row, symbol):
-    """Upsert row into Supabase social_sentiment table."""
     record = {
         "symbol": symbol,
         "galaxy_score": row.get("galaxy_score"),
@@ -60,33 +51,22 @@ def upsert_sentiment(row, symbol):
         "url_shares": row.get("url_shares", 0),
         "sentiment": row.get("sentiment", 0)
     }
-    print(f"[upsert] {symbol}: {record}")
     sb.table("social_sentiment").upsert(record).execute()
-
-
-# ========= MAIN LOOP =========
+    print(f"[upsert] {symbol}: {record}")
 
 def main():
-    print("Starting LunarCrush Sentiment Ingestion...")
-
-    try:
-        symbols = fetch_top_symbols(limit=20)
-        print(f"[symbols] Found {len(symbols)} top symbols: {symbols}")
-    except Exception as e:
-        print("[error] Could not fetch top symbols:", e)
-        return
-
+    print("🚀 Starting LunarCrush Sentiment ingestion...")
+    symbols = fetch_top_symbols(limit=20)
+    print(f"[symbols] {symbols}")
     for sym in symbols:
         try:
-            data = fetch_sentiment(sym)
-            upsert_sentiment(data, sym)
-            time.sleep(3)  # prevent hitting 429
+            row = fetch_sentiment(sym)
+            upsert_sentiment(row, sym)
+            time.sleep(3)  # spread requests to avoid 429
         except Exception as e:
             print(f"[error] {sym}: {e}")
             continue
-
-    print("Done LunarCrush ingestion ✅")
-
+    print("✅ Done sentiment job.")
 
 if __name__ == "__main__":
     main()
