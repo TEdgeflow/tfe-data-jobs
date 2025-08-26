@@ -1,56 +1,62 @@
-import os
-import time
-import requests
+import os, time, requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ===== ENV VARS =====
+# ====== ENV ======
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY or not LUNAR_API_KEY:
-    raise RuntimeError("Missing SUPABASE or LUNARCRUSH vars")
+    raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, LUNAR_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-LUNAR_API = "https://lunarcrush.com/api3/coins"
+# ====== LunarCrush Endpoint ======
+LUNAR_BASE = "https://lunarcrush.com/api3"
 
-def fetch_sentiment(symbol):
-    """Fetch sentiment metrics from LunarCrush"""
-    headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
-    resp = requests.get(f"{LUNAR_API}?symbol={symbol}", headers=headers)
-    resp.raise_for_status()
-    data = resp.json()
-    if "data" not in data or not data["data"]:
-        return None
-    return data["data"][0]  # first coin
-
-def upsert_sentiment(symbol, data):
-    row = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+def fetch_sentiment(symbol="BTC"):
+    url = f"{LUNAR_BASE}/assets"
+    params = {
         "symbol": symbol,
-        "galaxy_score": data.get("galaxy_score"),
-        "alt_rank": data.get("alt_rank"),
-        "social_volume": data.get("social_volume"),
-        "social_score": data.get("social_score"),
-        "url_shares": data.get("url_shares"),
-        "sentiment": data.get("sentiment")
+        "data_points": 1,
+        "interval": "day",
+        "key": LUNAR_API_KEY
     }
-    sb.table("social_sentiment").upsert(row).execute()
-    print(f"[upsert] {symbol} sentiment row inserted")
+    resp = requests.get(url, params=params)
+    print("[debug] URL:", resp.url)
+    print("[debug] Status:", resp.status_code)
+    resp.raise_for_status()
+    return resp.json()
+
+def upsert_sentiment(data, symbol="BTC"):
+    rows = []
+    try:
+        metrics = data.get("data", [])[0]  # first element
+        rows.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "symbol": symbol,
+            "galaxy_score": metrics.get("galaxy_score"),
+            "alt_rank": metrics.get("alt_rank"),
+            "social_volume": metrics.get("social_volume"),
+            "social_score": metrics.get("social_score"),
+        })
+    except Exception as e:
+        print("[error] parsing sentiment:", e)
+    if rows:
+        sb.table("lunar_sentiment").upsert(rows).execute()
+        print(f"[upsert] {len(rows)} sentiment rows")
 
 def main():
-    symbols = ["BTC", "ETH", "SOL", "BNB", "AVAX"]  # start with a handful
     while True:
-        for sym in symbols:
-            try:
-                data = fetch_sentiment(sym)
-                if data:
-                    upsert_sentiment(sym, data)
-            except Exception as e:
-                print(f"[error] {sym}:", e)
-        time.sleep(600)  # every 10 min
+        try:
+            data = fetch_sentiment("BTC")
+            upsert_sentiment(data, "BTC")
+            print("Done sentiment.")
+        except Exception as e:
+            print("Error sentiment job:", e)
+        time.sleep(3600)  # run hourly
 
 if __name__ == "__main__":
     main()
+
