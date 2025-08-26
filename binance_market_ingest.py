@@ -43,7 +43,6 @@ def fetch_market_data(symbols):
                 "symbol": sym,
                 "price": float(d["lastPrice"]),
                 "volume": float(d["quoteVolume"]),   # in USDT
-                "base_volume": float(d["volume"]),   # in base asset
                 "price_change_pct": float(d["priceChangePercent"]),
             })
         except Exception as e:
@@ -67,3 +66,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
