@@ -4,10 +4,9 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ========= ENV VARS (Railway) =========
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "50"))  # default: top 50
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
@@ -15,50 +14,50 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
+VS_CURRENCY = "usd"
 
-def iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-def fetch_market_data():
-    params = {
-        "vs_currency": "usd",
-        "order": "market_cap_desc",
-        "per_page": LIMIT_SYMBOLS,
-        "page": 1,
-        "sparkline": "false"
-    }
-
-    r = requests.get(COINGECKO_API, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
+# ========= FETCH DATA =========
+def fetch_coingecko_data():
+    url = f"{COINGECKO_API}?vs_currency={VS_CURRENCY}&order=market_cap_desc&per_page=20&page=1&sparkline=false"
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
 
     rows = []
+    ts = datetime.now(timezone.utc).isoformat()
+
     for d in data:
-        try:
-            rows.append({
-                "ts": iso_now(),
-                "symbol": d["symbol"].upper() + "USDT",   # match Binance-style symbols (BTC → BTCUSDT)
-                "price": float(d["current_price"]),
-                "volume_24h": float(d["total_volume"]),
-                "price_change_24h": float(d.get("price_change_percentage_24h") or 0.0),
-                "market_cap": float(d["market_cap"]) if d["market_cap"] else None,
-            })
-        except Exception as e:
-            print(f"[error] {d.get('id')}: {e}")
-            continue
+        rows.append({
+            "ts": ts,
+            "symbol": d.get("symbol", "").upper() + "USDT",  # unify with Binance symbols
+            "price": d.get("current_price"),
+            "volume_24h": d.get("total_volume"),
+            "price_change_24h": d.get("price_change_percentage_24h"),
+            "market_cap": d.get("market_cap")
+        })
+
     return rows
 
+# ========= UPSERT =========
 def upsert_market_data(rows):
-    if not rows:
-        return
-    print(f"[upsert] {len(rows)} Coingecko market rows…")
-    sb.table("market_data").upsert(rows).execute()
+    if rows:
+        sb.table("market_data").upsert(rows).execute()
+        print(f"[upsert] {len(rows)} Coingecko market rows…")
 
+# ========= MAIN LOOP =========
 def main():
-    print("Starting Coingecko Market Data Job…")
-    rows = fetch_market_data()
-    upsert_market_data(rows)
-    print("Done.")
+    while True:
+        print("Starting Coingecko Market Data Job…")
+        try:
+            rows = fetch_coingecko_data()
+            upsert_market_data(rows)
+            print("Done.")
+        except Exception as e:
+            print("Error during Coingecko job:", e)
+
+        # wait 5 minutes (300s) before next update
+        time.sleep(300)
 
 if __name__ == "__main__":
     main()
+
