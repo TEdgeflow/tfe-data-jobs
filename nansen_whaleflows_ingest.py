@@ -1,23 +1,25 @@
-import os, time, requests
+import os
+import time
+import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ===== ENV VARS =====
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 NANSEN_API_KEY = os.getenv("NANSEN_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
-    raise RuntimeError("Missing SUPABASE_URL, SUPABASE_KEY, or NANSEN_API_KEY")
+    raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, or NANSEN_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== Nansen Endpoint =====
-NANSEN_ENDPOINT = "https://api.nansen.ai/api/beta/smart-money/inflows"
+# ========= Nansen Endpoint =========
+NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
 
 def fetch_whale_flows():
     headers = {
-        "x-api-key": NANSEN_API_KEY,       # ✅ Correct header
+        "apiKey": NANSEN_API_KEY,       # ✅ Pioneer plan expects this
         "Content-Type": "application/json"
     }
     body = {
@@ -28,8 +30,8 @@ def fetch_whale_flows():
             "includeNativeTokens": True
         }
     }
-    resp = requests.post(NANSEN_ENDPOINT, headers=headers, json=body)
-    print("[debug] status", resp.status_code, resp.text)  # Debug line
+    resp = requests.post(NANSEN_URL, headers=headers, json=body)
+    print("[debug] status", resp.status_code, resp.text[:200])
     resp.raise_for_status()
     return resp.json()
 
@@ -47,17 +49,17 @@ def upsert_whale_flows(data):
         })
     if rows:
         sb.table("nansen_whaleflows").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} rows")
+        print(f"[upsert] {len(rows)} whale flow rows")
 
 def main():
     while True:
         try:
             data = fetch_whale_flows()
             upsert_whale_flows(data)
-            print("✅ Whale flows updated.")
+            print("Done whale flows.")
         except Exception as e:
-            print("❌ Error whale flows job:", e)
-        time.sleep(3600)  # Run every 1 hour
+            print("Error whale flows job:", e)
+        time.sleep(3600)  # every 1 hour
 
 if __name__ == "__main__":
     main()
