@@ -1,28 +1,25 @@
-import os, time, requests
+import os
+import time
+import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ======== ENV VARS =========
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 NANSEN_API_KEY = os.getenv("NANSEN_API_KEY")
-
-# Debug check
-print("[debug] SUPABASE_URL present?", bool(SUPABASE_URL))
-print("[debug] SUPABASE_KEY present?", bool(SUPABASE_KEY))
-print("[debug] NANSEN_API_KEY present?", bool(NANSEN_API_KEY))
 
 if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
     raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, or NANSEN_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ========= Nansen Endpoint ========
+# ========= Nansen Endpoint =========
 NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
 
 def fetch_whale_flows():
     headers = {
-        "x-api-key": NANSEN_API_KEY,   # ✅ Correct header
+        "x-api-key": NANSEN_API_KEY,   # ✅ FIXED header
         "Content-Type": "application/json"
     }
     body = {
@@ -36,7 +33,6 @@ def fetch_whale_flows():
     resp = requests.post(NANSEN_URL, headers=headers, json=body)
     resp.raise_for_status()
     return resp.json()
-
 
 def upsert_whale_flows(data):
     rows = []
@@ -57,12 +53,16 @@ def upsert_whale_flows(data):
 def main():
     while True:
         try:
+            print("[debug] SUPABASE_URL present?", bool(SUPABASE_URL))
+            print("[debug] SUPABASE_KEY present?", bool(SUPABASE_KEY))
+            print("[debug] NANSEN_API_KEY present?", bool(NANSEN_API_KEY))
+
             data = fetch_whale_flows()
             upsert_whale_flows(data)
             print("Done whale flows.")
         except Exception as e:
             print("Error whale flows job:", e)
-        time.sleep(3600)  # every 1 hour
+        time.sleep(3600)  # run every 1 hour
 
 if __name__ == "__main__":
     main()
