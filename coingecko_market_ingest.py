@@ -29,7 +29,7 @@ def fetch_coingecko_data():
     for d in data:
         rows.append({
             "ts": ts,
-            "symbol": d.get("symbol", "").upper() + "USDT",  # unify with Binance symbols
+            "symbol": d.get("symbol", "").upper() + "USDT",
             "price": d.get("current_price"),
             "volume_24h": d.get("total_volume"),
             "price_change_24h": d.get("price_change_percentage_24h"),
@@ -55,9 +55,8 @@ def main():
         except Exception as e:
             print("Error during Coingecko job:", e)
 
-        # wait 5 minutes (300s) before next update
+        # wait 5 minutes before next update
         time.sleep(300)
 
 if __name__ == "__main__":
     main()
-
