@@ -1,80 +1,86 @@
-import os
-import time
-import json
-import requests
-from datetime import datetime, timezone
+import os, time, requests
 from supabase import create_client, Client
+from datetime import datetime, timezone
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
+
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BINANCE_REST = "https://fapi.binance.com/fapi/v1/aggTrades"
+BINANCE_FAPI = "https://fapi.binance.com"
 
-# Keep a running CVD
-cumulative_cvd = {}
+# ========= Helpers =========
+def iso_now():
+    return datetime.now(timezone.utc).isoformat()
 
-def fetch_trades(symbol="BTCUSDT", limit=500):
-    """Fetch aggregated trades from Binance futures (REST fallback)."""
-    url = BINANCE_REST
-    params = {"symbol": symbol, "limit": limit}
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
+def get_usdt_perp_symbols():
+    """Fetch all USDT perpetual contract symbols"""
+    resp = requests.get(f"{BINANCE_FAPI}/fapi/v1/exchangeInfo")
+    resp.raise_for_status()
+    symbols = [
+        s["symbol"] for s in resp.json()["symbols"]
+        if s["quoteAsset"] == "USDT" and s["contractType"] == "PERPETUAL"
+    ]
+    return symbols
+
+def fetch_trades(symbol, limit=500):
+    """Fetch recent trades for a symbol"""
+    url = f"{BINANCE_FAPI}/fapi/v1/trades"
+    resp = requests.get(url, params={"symbol": symbol, "limit": limit})
+    resp.raise_for_status()
+    return resp.json()
 
 def process_trades(symbol, trades):
-    """Convert Binance trades into orderflow metrics."""
-    global cumulative_cvd
-
-    buys, sells = 0.0, 0.0
+    """Calculate buy/sell volume and delta"""
+    buys, sells = 0, 0
     for t in trades:
-        qty = float(t["q"])   # quantity
-        price = float(t["p"])
-        is_buyer_maker = t["m"]  # True if SELLER is taker → means SELL trade
-        if is_buyer_maker:
+        qty = float(t["qty"])
+        if t["isBuyerMaker"]:  # seller-initiated
             sells += qty
-        else:
+        else:  # buyer-initiated
             buys += qty
-
     delta = buys - sells
-    prev_cvd = cumulative_cvd.get(symbol, 0.0)
-    cvd = prev_cvd + delta
-    cumulative_cvd[symbol] = cvd
-
-    row = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+    return {
+        "ts": iso_now(),
         "symbol": symbol,
         "buys_volume": buys,
         "sells_volume": sells,
         "delta": delta,
-        "cvd": cvd,
+        "cvd": delta  # running sum handled later if needed
     }
-    return row
 
-def upsert_orderflow(row):
-    """Insert orderflow row into Supabase."""
-    try:
-        sb.table("orderflow_cvd").upsert(row).execute()
-        print(f"[upsert] {row['symbol']} Δ={row['delta']:.2f} CVD={row['cvd']:.2f}")
-    except Exception as e:
-        print("[error] Supabase insert failed:", e)
+def upsert(rows):
+    if rows:
+        sb.table("orderflow_cvd").upsert(rows).execute()
+        print(f"[upsert] {len(rows)} rows")
 
+# ========= Main Job =========
 def main():
-    symbols = ["BTCUSDT", "ETHUSDT"]  # expand later
+    symbols = get_usdt_perp_symbols()
+    print(f"[symbols] Found {len(symbols)} USDT-PERP symbols.")
+
+    batch_size = 100
     while True:
-        try:
-            for sym in symbols:
-                trades = fetch_trades(sym, limit=200)
-                row = process_trades(sym, trades)
-                upsert_orderflow(row)
-            time.sleep(30)  # every 30s
-        except Exception as e:
-            print("[error]", e)
-            time.sleep(10)
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            rows = []
+            for sym in batch:
+                try:
+                    trades = fetch_trades(sym, limit=500)
+                    row = process_trades(sym, trades)
+                    rows.append(row)
+                except Exception as e:
+                    print(f"[error] {sym}: {e}")
+            upsert(rows)
+            time.sleep(5)  # wait between batches to stay under rate limits
+
+        print("Cycle complete. Restarting...")
+        time.sleep(60)  # wait 1 min before full refresh
 
 if __name__ == "__main__":
-    print("[debug] Starting Binance Orderflow CVD ingestion")
-    print("[debug] SUPABASE_URL present?", bool(SUPABASE_URL))
-    print("[debug] SUPABASE_KEY present?", bool(SUPABASE_KEY))
     main()
+
