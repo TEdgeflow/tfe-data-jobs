@@ -22,7 +22,7 @@ NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
 
 def fetch_whale_flows():
     headers = {
-        "Authorization": f"Bearer {NANSEN_API_KEY}",
+        "x-api-key": NANSEN_API_KEY,   # ✅ Correct header
         "Content-Type": "application/json"
     }
     body = {
@@ -36,6 +36,7 @@ def fetch_whale_flows():
     resp = requests.post(NANSEN_URL, headers=headers, json=body)
     resp.raise_for_status()
     return resp.json()
+
 
 def upsert_whale_flows(data):
     rows = []
