@@ -27,9 +27,14 @@ def fetch_mentions(limit=20):
     return resp.json().get("data", [])
 
 def fetch_categories(limit=10):
-    """Fetch top categories by interactions"""
-    url = f"{BASE_URL}/category/cryptocurrencies/v1"
-    params = {"limit": limit, "sort": "interactions_24h", "desc": "true"}
+    """Fetch top categories (narratives) by interactions"""
+    url = f"{BASE_URL}/categories/v1"
+    params = {
+        "topic": "cryptocurrencies",   # ✅ FIXED
+        "limit": limit,
+        "sort": "interactions_24h",
+        "desc": "true"
+    }
     resp = requests.get(url, headers=HEADERS, params=params)
     if resp.status_code == 429:
         print("⚠️ Rate limited on categories. Sleeping 30s...")
@@ -90,5 +95,6 @@ if __name__ == "__main__":
         main()
         print("⏳ Sleeping 5 minutes before next pull...")
         time.sleep(300)
+
 
 
