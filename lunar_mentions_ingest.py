@@ -1,20 +1,22 @@
-import os, time, requests
-from datetime import datetime, timezone
+import os
+import time
+import requests
 from supabase import create_client, Client
 
+# Env Vars
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
-print("[debug] SUPABASE_URL =", SUPABASE_URL)
-print("[debug] SUPABASE_KEY present?", bool(SUPABASE_KEY))
-print("[debug] LUNAR_API_KEY present?", bool(LUNAR_API_KEY))
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://lunarcrush.com/api4/public"
 
 def fetch_mentions(limit=20):
+    """Fetch top mentioned coins"""
     url = f"{BASE_URL}/mentions/v1?limit={limit}&sort=interactions_24h&desc=true"
     headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
     resp = requests.get(url, headers=headers)
@@ -23,12 +25,11 @@ def fetch_mentions(limit=20):
 
 def upsert_mentions(data):
     rows = []
-    for d in data.get("data", []):
+    for item in data.get("data", []):
         rows.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "symbol": d.get("s"),
-            "mentions_count": d.get("mc"),
-            "interactions_24h": d.get("i24h")
+            "ts": "now()",
+            "symbol": item.get("symbol"),
+            "mentions": item.get("interactions_24h"),
         })
     if rows:
         sb.table("social_mentions").upsert(rows).execute()
@@ -37,11 +38,15 @@ def upsert_mentions(data):
 def main():
     while True:
         try:
+            print("🔍 Fetching mentions...")
             data = fetch_mentions(limit=20)
             upsert_mentions(data)
+        except requests.exceptions.HTTPError as e:
+            print(f"❌ Mentions error: {e}")
         except Exception as e:
-            print("❌ Mentions error:", e)
-        time.sleep(300)  # every 5 min
+            print(f"❌ Unexpected error: {e}")
+        time.sleep(300)  # run every 5 min
 
 if __name__ == "__main__":
     main()
+
