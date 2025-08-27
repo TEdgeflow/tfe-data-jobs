@@ -1,46 +1,45 @@
 import os, time, requests
 from supabase import create_client, Client
-from datetime import datetime, timezone
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LUNAR_INFLUENCERS_API_KEY = os.getenv("LUNAR_INFLUENCERS_API_KEY")
+LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BASE_URL = "https://lunarcrush.com/api4/public/influencers"
+BASE_URL = "https://lunarcrush.com/api4/public"
+HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
-def fetch_influencers():
-    headers = {"Authorization": f"Bearer {LUNAR_INFLUENCERS_API_KEY}"}
-    params = {"limit": 20}
-    resp = requests.get(BASE_URL, headers=headers, params=params)
+def fetch_influencers(limit=20):
+    url = f"{BASE_URL}/influencers/v1"
+    params = {"limit": limit}
+    resp = requests.get(url, headers=HEADERS, params=params)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json().get("data", [])
 
 def upsert_influencers(data):
     rows = []
-    for item in data.get("data", []):
+    for inf in data:
         rows.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "handle": item.get("handle"),
-            "platform": item.get("platform"),
-            "followers": item.get("followers"),
-            "engagement_rate": item.get("engagementRate"),
-            "influence_score": item.get("influenceScore"),
-            "mentions": item.get("mentions")
+            "influencer_id": inf.get("influencer_id"),
+            "creator_name": inf.get("creator_name"),
+            "creator_followers": inf.get("creator_followers"),
+            "interactions_24h": inf.get("interactions_24h")
         })
     if rows:
         sb.table("social_influencers").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} influencers rows")
+        print(f"[✅] Upserted {len(rows)} influencers rows")
 
 def main():
     while True:
         try:
-            data = fetch_influencers()
-            upsert_influencers(data)
+            print("🌐 Fetching influencers...")
+            infl = fetch_influencers(limit=20)
+            upsert_influencers(infl)
         except Exception as e:
-            print("Error influencers job:", e)
-        time.sleep(7200)  # every 2 hours
+            print(f"❌ Influencer error: {e}")
+        time.sleep(1200)
 
 if __name__ == "__main__":
     main()
+
