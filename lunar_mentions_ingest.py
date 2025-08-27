@@ -15,9 +15,9 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://lunarcrush.com/api4/public"
 
-def fetch_mentions(limit=20):
-    """Fetch top mentioned coins"""
-    url = f"{BASE_URL}/mentions/v1?limit={limit}&sort=interactions_24h&desc=true"
+def fetch_top_mentions(limit=20):
+    """Fetch top mentioned coins (from coins/list)"""
+    url = f"{BASE_URL}/coins/list/v1?limit={limit}&sort=interactions_24h&desc=true"
     headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
@@ -29,7 +29,7 @@ def upsert_mentions(data):
         rows.append({
             "ts": "now()",
             "symbol": item.get("symbol"),
-            "mentions": item.get("interactions_24h"),
+            "mentions": item.get("interactions_24h"),  # social mentions proxy
         })
     if rows:
         sb.table("social_mentions").upsert(rows).execute()
@@ -39,7 +39,7 @@ def main():
     while True:
         try:
             print("🔍 Fetching mentions...")
-            data = fetch_mentions(limit=20)
+            data = fetch_top_mentions(limit=20)
             upsert_mentions(data)
         except requests.exceptions.HTTPError as e:
             print(f"❌ Mentions error: {e}")
@@ -49,4 +49,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
