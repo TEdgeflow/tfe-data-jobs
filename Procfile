@@ -8,10 +8,7 @@ lunar_narratives: python lunar_narratives_ingest.py
 lunar_news: python lunar_news_ingest.py
 lunar_trends: python lunar_trends_ingest.py
 lunar_influencers: python lunar_influencers_ingest.py
-coinglass_maxpain: python coinglass_maxpain_ingest.py
-coinglass_liquidations: python coinglass_liquidations_ingest.py
-dropstab_unlocks: python dropstab_unlocks_ingest.py
-dropstab_accumulation: python dropstab_accumulation_ingest.py
+
 
 
 
