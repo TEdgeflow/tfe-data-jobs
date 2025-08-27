@@ -11,7 +11,8 @@ BASE_URL = "https://lunarcrush.com/api4/public"
 HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
 def fetch_categories(limit=10):
-    url = f"{BASE_URL}/categories/v1"
+    # ✅ Correct endpoint is /category/v1 (singular)
+    url = f"{BASE_URL}/category/v1"
     params = {"limit": limit, "sort": "interactions_24h", "desc": "true"}
     resp = requests.get(url, headers=HEADERS, params=params)
     resp.raise_for_status()
@@ -28,7 +29,7 @@ def upsert_categories(data):
         })
     if rows:
         sb.table("social_categories").upsert(rows).execute()
-        print(f"[✅] Upserted {len(rows)} categories rows")
+        print(f"[✅] Upserted {len(rows)} category rows")
 
 def main():
     while True:
@@ -42,5 +43,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
