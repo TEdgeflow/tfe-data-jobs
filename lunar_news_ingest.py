@@ -1,49 +1,46 @@
 import os, time, requests
 from supabase import create_client, Client
-from datetime import datetime, timezone
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LUNAR_NEWS_API_KEY = os.getenv("LUNAR_NEWS_API_KEY")
+LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BASE_URL = "https://lunarcrush.com/api4/public/news"
+BASE_URL = "https://lunarcrush.com/api4/public"
+HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
-def fetch_news(symbol):
-    headers = {"Authorization": f"Bearer {LUNAR_NEWS_API_KEY}"}
-    params = {"symbol": symbol, "limit": 5}
-    resp = requests.get(BASE_URL, headers=headers, params=params)
+def fetch_news(limit=20):
+    url = f"{BASE_URL}/category/cryptocurrencies/news/v1"
+    params = {"limit": limit}
+    resp = requests.get(url, headers=HEADERS, params=params)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json().get("data", [])
 
-def upsert_news(data, symbol):
+def upsert_news(data):
     rows = []
-    for item in data.get("data", []):
+    for n in data:
         rows.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "symbol": symbol,
-            "title": item.get("title"),
-            "url": item.get("url"),
-            "source": item.get("source"),
-            "sentiment_score": item.get("sentiment", {}).get("score"),
-            "interactions": item.get("interactionsCount"),
-            "published_at": item.get("publishedAt")
+            "post_title": n.get("post_title"),
+            "post_link": n.get("post_link"),
+            "post_sentiment": n.get("post_sentiment"),
+            "creator_name": n.get("creator_name"),
+            "interactions_total": n.get("interactions_total")
         })
     if rows:
         sb.table("social_news").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} news rows for {symbol}")
+        print(f"[✅] Upserted {len(rows)} news rows")
 
 def main():
-    symbols = ["BTC", "ETH", "SOL", "AVAX", "XRP"]  # expand as needed
     while True:
-        for sym in symbols:
-            try:
-                data = fetch_news(sym)
-                upsert_news(data, sym)
-            except Exception as e:
-                print("Error news job:", e)
-        time.sleep(1800)  # every 30 minutes
+        try:
+            print("📰 Fetching news...")
+            news = fetch_news(limit=20)
+            upsert_news(news)
+        except Exception as e:
+            print(f"❌ News error: {e}")
+        time.sleep(600)
 
 if __name__ == "__main__":
     main()
+
