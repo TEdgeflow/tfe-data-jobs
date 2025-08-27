@@ -3,49 +3,74 @@ import time
 import requests
 from supabase import create_client, Client
 
-# Env Vars
+# ===== Env Vars =====
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY")
+    raise RuntimeError("❌ Missing SUPABASE_URL or SUPABASE_KEY in environment")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ===== LunarCrush Endpoint =====
 BASE_URL = "https://lunarcrush.com/api4/public"
+HEADERS = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
 
-def fetch_top_mentions(limit=20):
-    """Fetch top mentioned coins (from coins/list)"""
-    url = f"{BASE_URL}/coins/list/v1?limit={limit}&sort=interactions_24h&desc=true"
-    headers = {"Authorization": f"Bearer {LUNAR_API_KEY}"}
-    resp = requests.get(url, headers=headers)
+
+# --- Fetch Mentions Data ---
+def fetch_mentions(limit=20):
+    url = f"{BASE_URL}/coins/list/v1"
+    params = {
+        "limit": limit,
+        "sort": "interactions_24h",
+        "desc": "true"
+    }
+    resp = requests.get(url, headers=HEADERS, params=params)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json().get("data", [])
 
+
+# --- Upsert into Supabase ---
 def upsert_mentions(data):
     rows = []
-    for item in data.get("data", []):
+    for m in data:
         rows.append({
-            "ts": "now()",
-            "symbol": item.get("symbol"),
-            "mentions": item.get("interactions_24h"),  # social mentions proxy
+            "symbol": m.get("symbol"),
+            "social_volume_24h": m.get("social_volume_24h"),
+            "interactions_24h": m.get("interactions_24h"),
+            "contributors": m.get("contributors")
         })
+
     if rows:
         sb.table("social_mentions").upsert(rows).execute()
         print(f"[✅] Upserted {len(rows)} mentions rows")
+    else:
+        print("⚠️ No mentions data returned")
 
+
+# --- Main Loop ---
 def main():
     while True:
+        print("🔍 Fetching mentions...")
         try:
-            print("🔍 Fetching mentions...")
-            data = fetch_top_mentions(limit=20)
-            upsert_mentions(data)
+            mentions_data = fetch_mentions(limit=20)
+            upsert_mentions(mentions_data)
+
         except requests.exceptions.HTTPError as e:
-            print(f"❌ Mentions error: {e}")
+            if e.response.status_code == 429:
+                print("⚠️ Rate limited. Sleeping 60s...")
+                time.sleep(60)
+                continue
+            else:
+                print(f"❌ Mentions error: {e}")
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
-        time.sleep(300)  # run every 5 min
+
+        # Sleep before next pull
+        time.sleep(300)  # every 5 minutes
+
 
 if __name__ == "__main__":
+    print("🚀 Starting LunarCrush Mentions Ingestion...")
     main()
