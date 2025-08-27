@@ -8,6 +8,8 @@ lunar_narratives: python lunar_narratives_ingest.py
 lunar_news: python lunar_news_ingest.py
 lunar_trends: python lunar_trends_ingest.py
 lunar_influencers: python lunar_influencers_ingest.py
+lunar_mentions: python lunar_mentions_ingest.py
+lunar_categories: python lunar_categories_ingest.py
 
 
 
