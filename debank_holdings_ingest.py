@@ -1,56 +1,19 @@
-import os
 import time
 import requests
-from supabase import create_client, Client
-from datetime import datetime, timezone
 
-# ========= ENV VARS =========
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
-
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# ========= DeBank Public Endpoint =========
-DEBANK_URL = "https://api.debank.com/token/cache_balance_list"
-
-# Example wallet (replace with tracked addresses)
-TEST_WALLET = "0x8d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"  # Vitalik's
-
-def fetch_debank_holdings(wallet):
+def fetch_debank_holdings(wallet, retries=5):
+    url = "https://api.debank.com/token/cache_balance_list"
     params = {"user_addr": wallet}
-    resp = requests.get(DEBANK_URL, params=params)
-    print("[debug]", resp.status_code, resp.text[:300])
-    resp.raise_for_status()
-    return resp.json().get("data", [])
 
-def upsert_holdings(wallet, tokens):
-    rows = []
-    ts = datetime.now(timezone.utc).isoformat()
-    for token in tokens:
-        rows.append({
-            "ts": ts,
-            "wallet": wallet,
-            "token": token.get("symbol"),
-            "chain": token.get("chain"),
-            "amount": token.get("amount"),
-            "usd_value": token.get("price", 0) * token.get("amount", 0)
-        })
-    if rows:
-        sb.table("debank_holdings").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} rows inserted")
+    for attempt in range(retries):
+        resp = requests.get(url, params=params)
+        if resp.status_code == 200:
+            return resp.json().get("data", [])
+        elif resp.status_code == 429:  # Too many requests
+            wait = (2 ** attempt) * 5  # exponential backoff: 5s, 10s, 20s, ...
+            print(f"⚠️ Rate limited. Waiting {wait}s before retry...")
+            time.sleep(wait)
+        else:
+            resp.raise_for_status()
 
-def main():
-    while True:
-        try:
-            tokens = fetch_debank_holdings(TEST_WALLET)
-            upsert_holdings(TEST_WALLET, tokens)
-            print("✅ Done holdings")
-        except Exception as e:
-            print("❌ Error in DeBank job:", e)
-        time.sleep(3600)  # every 1 hour
-
-if __name__ == "__main__":
-    main()
+    raise RuntimeError(f"❌ Failed after {retries} retries (last code {resp.status_code})")
