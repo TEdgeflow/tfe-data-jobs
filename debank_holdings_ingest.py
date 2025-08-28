@@ -1,4 +1,6 @@
-import os, time, requests
+import os
+import time
+import requests
 from supabase import create_client, Client
 from datetime import datetime, timezone
 
@@ -7,45 +9,56 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing Supabase ENV vars")
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ========= DeBank OpenAPI =========
 DEBANK_URL = "https://openapi.debank.com/v1/user/token_list"
 
-def fetch_debank(address: str):
-    resp = requests.get(f"{DEBANK_URL}?id={address}")
-    print(f"[debug] {address} -> {resp.status_code}")
+# 👉 Replace with a wallet you want to track (test with Vitalik's wallet first)
+TEST_WALLET = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+
+
+def fetch_debank_holdings(wallet):
+    url = f"{DEBANK_URL}?id={wallet}"
+    resp = requests.get(url)
+    print("[debug] status", resp.status_code)
     resp.raise_for_status()
     return resp.json()
 
-def upsert_holdings(address: str, chain: str, data):
+
+def upsert_holdings(wallet, data):
     rows = []
+    ts = datetime.now(timezone.utc).isoformat()
     for token in data:
         rows.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "address": address,
-            "chain": chain,
+            "ts": ts,
+            "wallet": wallet,
+            "chain": token.get("chain"),
             "token": token.get("id"),
+            "symbol": token.get("symbol"),
             "balance": token.get("amount"),
-            "value_usd": (token.get("price") or 0) * (token.get("amount") or 0),
-            "source": "debank"
+            "usd_value": token.get("price", 0) * token.get("amount", 0)
         })
+
     if rows:
-        sb.table("whale_holdings").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} rows for {address}")
+        sb.table("debank_holdings").upsert(rows).execute()
+        print(f"[upsert] {len(rows)} holdings rows")
+
 
 def main():
     while True:
-        wallets = sb.table("whale_addresses").select("*").execute().data
-        for w in wallets:
-            try:
-                data = fetch_debank(w["address"])
-                upsert_holdings(w["address"], w["chain"], data)
-            except Exception as e:
-                print(f"❌ {w['address']} failed: {e}")
-        print("✅ Cycle complete")
-        time.sleep(3600)
+        try:
+            print(f"Fetching DeBank holdings for {TEST_WALLET}...")
+            data = fetch_debank_holdings(TEST_WALLET)
+            upsert_holdings(TEST_WALLET, data)
+            print("✅ Done DeBank holdings.")
+        except Exception as e:
+            print("❌ Error in DeBank job:", e)
+
+        time.sleep(3600)  # run every hour
+
 
 if __name__ == "__main__":
     main()
