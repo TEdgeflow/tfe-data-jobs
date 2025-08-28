@@ -15,8 +15,8 @@ if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= Nansen Endpoint =========
-# ✅ official docs: https://api.nansen.ai/api/smart-money/holdings
-NANSEN_URL = "https://api.nansen.ai/api/smart-money/holdings"
+# ✅ official docs: https://api.nansen.ai/smart-money/holdings
+NANSEN_URL = "https://api.nansen.ai/smart-money/holdings"
 
 def fetch_holdings():
     headers = {
