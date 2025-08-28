@@ -15,28 +15,27 @@ if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= Nansen Endpoint =========
-NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/holdings"
+# ✅ From docs
+NANSEN_URL = "https://api.nansen.ai/api/smart-money/holdings"
 
 def fetch_holdings():
     headers = {
-        "apiKey": NANSEN_API_KEY,  # ✅ Pioneer/paid plan uses this header
+        "Authorization": f"Bearer {NANSEN_API_KEY}",  # ✅ docs require Bearer
         "Content-Type": "application/json"
     }
     body = {
-        "parameters": {
-            "smFilter": ["180D Smart Trader", "Fund", "Smart Trader"],
-            "chains": ["ethereum", "solana"],
-            "includeStablecoin": True
-        }
+        "smFilter": ["180D Smart Trader", "Fund", "Smart Trader"],
+        "chains": ["ethereum", "solana"],
+        "includeStablecoin": True
     }
+
     resp = requests.post(NANSEN_URL, headers=headers, json=body)
-    print("[debug] status", resp.status_code, resp.text[:300])  # show response preview
+    print("[debug] status", resp.status_code, resp.text[:300])
     resp.raise_for_status()
     return resp.json()
 
 def upsert_holdings(data):
     rows = []
-    # Like inflows, holdings returns a list directly
     for d in data:
         rows.append({
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -62,4 +61,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
