@@ -14,21 +14,22 @@ if not SUPABASE_URL or not SUPABASE_KEY or not ETHERSCAN_API:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ========= Etherscan API =========
+# ========= Etherscan Endpoint =========
 ETHERSCAN_URL = "https://api.etherscan.io/api"
 
-# 👉 Add wallets to track
+# 👉 Add wallets you want to track
 WALLETS = [
     "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",  # Vitalik
     # add more whale wallets here
 ]
 
-# 👉 Add token contract addresses (example: USDT, USDC, DAI)
-ERC20_TOKENS = {
-    "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "DAI":  "0x6B175474E89094C44Da98b954EedeAC495271d0F"
-}
+
+def fetch_tracked_tokens():
+    """Fetch token list from Supabase table tracked_tokens."""
+    resp = sb.table("tracked_tokens").select("*").execute()
+    tokens = {row["symbol"]: (row["contract_address"], row["decimals"]) for row in resp.data}
+    print(f"📌 Loaded {len(tokens)} tokens from Supabase: {list(tokens.keys())}")
+    return tokens
 
 
 def fetch_eth_balance(wallet):
@@ -45,7 +46,8 @@ def fetch_eth_balance(wallet):
     data = resp.json()
     if data.get("status") == "1":
         balance_wei = int(data["result"])
-        return balance_wei / 10**18
+        balance_eth = balance_wei / 10**18
+        return balance_eth
     return None
 
 
@@ -70,7 +72,7 @@ def fetch_token_balance(wallet, token_name, contract_address, decimals=18):
 
 
 def upsert_balance(wallet, token, chain, amount):
-    """Insert into Supabase"""
+    """Insert balance into Supabase"""
     if amount is None:
         return
     row = {
@@ -79,7 +81,7 @@ def upsert_balance(wallet, token, chain, amount):
         "token": token,
         "chain": chain,
         "amount": amount,
-        "usd_value": None  # later join with Coingecko price
+        "usd_value": None  # later enrich with Coingecko
     }
     sb.table("etherscan_holdings").upsert([row]).execute()
     print(f"[upsert] {token} balance saved for {wallet[:6]}... ({amount})")
@@ -88,6 +90,8 @@ def upsert_balance(wallet, token, chain, amount):
 def main():
     while True:
         print("🚀 Starting Etherscan balances fetch...")
+        tokens = fetch_tracked_tokens()
+
         for wallet in WALLETS:
             try:
                 # ETH balance
@@ -95,13 +99,13 @@ def main():
                 upsert_balance(wallet, "ETH", "ethereum", eth_balance)
                 print(f"✅ {wallet[:6]}... ETH: {eth_balance:.4f}")
 
-                # ERC20 tokens
-                for token, contract in ERC20_TOKENS.items():
-                    bal = fetch_token_balance(wallet, token, contract)
+                # ERC20 tokens from Supabase list
+                for token, (contract, decimals) in tokens.items():
+                    bal = fetch_token_balance(wallet, token, contract, decimals)
                     upsert_balance(wallet, token, "ethereum", bal)
                     print(f"   {token}: {bal}")
 
-                time.sleep(10)  # small delay between wallets
+                time.sleep(10)  # delay between wallets
 
             except Exception as e:
                 print(f"❌ Error processing {wallet}: {e}")
@@ -112,3 +116,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
