@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "50"))  # default: top 50
+LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "50"))  # default top 50
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
@@ -32,17 +32,37 @@ def fetch_market_data():
     return resp.json()
 
 
+def get_table_columns(table: str):
+    """Fetch column names from Supabase (schema safe check)"""
+    try:
+        result = sb.table(table).select("*").limit(1).execute()
+        if result.data and len(result.data) > 0:
+            return list(result.data[0].keys())
+    except Exception as e:
+        print(f"[warn] Could not fetch schema for {table}: {e}")
+    return []
+
+
 def upsert_market_data(data):
-    """Insert/Update rows in Supabase"""
+    """Insert/Update rows in Supabase with schema check"""
+    columns = get_table_columns("market_data")
     rows = []
+
     for d in data:
-        rows.append({
+        row = {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "symbol": d["symbol"].upper() + "USDT",  # e.g., BTC → BTCUSDT
-            "price": d.get("current_price"),
-            "volume_usd": d.get("total_volume"),
-            "market_cap": d.get("market_cap")
-        })
+            "symbol": d["symbol"].upper() + "USDT",
+            "price": d.get("current_price")
+        }
+
+        if "volume_usd" in columns:
+            row["volume_usd"] = d.get("total_volume")
+        if "market_cap" in columns:
+            row["market_cap"] = d.get("market_cap")
+        if "price_change_24h" in columns:
+            row["price_change_24h"] = d.get("price_change_24h")
+
+        rows.append(row)
 
     if rows:
         sb.table("market_data").upsert(rows).execute()
@@ -64,5 +84,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
