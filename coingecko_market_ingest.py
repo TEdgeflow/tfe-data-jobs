@@ -1,79 +1,68 @@
 import os
 import time
 import requests
-from datetime import datetime, timezone
 from supabase import create_client, Client
+from datetime import datetime, timezone
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "50"))  # default: top 50
+
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ========= CONFIG =========
-COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
-SYMBOLS = (
-    "bitcoin,ethereum,binancecoin,ripple,solana,cardano,polkadot,"
-    "matic-network,tron,litecoin,okb,near,aptos,stellar,monero,"
-    "uniswap,chainlink,cosmos,arbitrum,internet-computer"
-)
+# ========= Coingecko Endpoint =========
+COINGECKO_URL = "https://api.coingecko.com/api/v3/coins/markets"
 
-# ========= FETCH =========
-def fetch_coingecko_data():
-    params = {"vs_currency": "usd", "ids": SYMBOLS}
-    tries = 0
-    while tries < 3:  # retry up to 3 times
-        try:
-            resp = requests.get(COINGECKO_API, params=params, timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.exceptions.HTTPError as e:
-            if resp.status_code == 429:
-                wait_time = 60 * (tries + 1)  # backoff: 1m → 2m → 3m
-                print(f"⚠️ Rate limited by CoinGecko. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                tries += 1
-            else:
-                print("HTTP error:", e)
-                return []
-        except Exception as e:
-            print("Error fetching:", e)
-            return []
-    return []
 
-# ========= UPSERT =========
+def fetch_market_data():
+    """Fetch top coin data from Coingecko"""
+    params = {
+        "vs_currency": "usd",
+        "order": "market_cap_desc",
+        "per_page": LIMIT_SYMBOLS,
+        "page": 1,
+        "sparkline": "false"
+    }
+    resp = requests.get(COINGECKO_URL, params=params)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def upsert_market_data(data):
-    ts = datetime.now(timezone.utc).isoformat()
+    """Insert/Update rows in Supabase"""
     rows = []
-    for coin in data:
+    for d in data:
         rows.append({
-            "ts": ts,
-            "symbol": coin.get("symbol", "").upper() + "USDT",
-            "price": coin.get("current_price"),
-            "volume_24h": coin.get("total_volume"),
-            "market_cap": coin.get("market_cap"),
-            "price_change_24h": coin.get("price_change_percentage_24h"),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "symbol": d["symbol"].upper() + "USDT",  # e.g., BTC → BTCUSDT
+            "price": d.get("current_price"),
+            "volume_usd": d.get("total_volume"),
+            "market_cap": d.get("market_cap")
         })
+
     if rows:
         sb.table("market_data").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} Coingecko rows stored.")
-    else:
-        print("⚠️ No rows to upsert.")
+        print(f"[upsert] {len(rows)} rows saved.")
 
-# ========= MAIN =========
+
 def main():
     while True:
-        print("Starting Coingecko Market Data Job…")
-        data = fetch_coingecko_data()
-        if data:
+        try:
+            print("🚀 Fetching Coingecko market data...")
+            data = fetch_market_data()
             upsert_market_data(data)
-            print("✅ Done.")
-        else:
-            print("⚠️ No data returned from CoinGecko.")
-        time.sleep(600)  # run every 10 minutes
+            print("✅ Done cycle. Sleeping 5 minutes...\n")
+        except Exception as e:
+            print("❌ Error in Coingecko job:", e)
+
+        time.sleep(300)  # every 5 minutes
+
 
 if __name__ == "__main__":
     main()
+
 
