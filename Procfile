@@ -10,7 +10,8 @@ lunar_trends: python lunar_trends_ingest.py
 lunar_influencers: python lunar_influencers_ingest.py
 lunar_mentions: python lunar_mentions_ingest.py
 lunar_categories: python lunar_categories_ingest.py
-
+debank_holdings: python debank_holdings_ingest.py
+etherscan_holdings: python etherscan_holdings_ingest.py
 
 
 
