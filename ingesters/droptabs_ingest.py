@@ -4,121 +4,96 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ========= ENV VARS =========
+# ===== ENV VARS =====
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-# Correct production base URL
-DROPTABS_BASE_URL = os.getenv(
-    "DROPTABS_BASE_URL", "https://public-api.dropstab.com/api/v1"
-)
-
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 if not DROPTABS_KEY:
-    raise RuntimeError("Missing DROPTABS_KEY")
+    raise RuntimeError("Missing Droptabs API key")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Correct header (per Droptabs docs)
-HEADERS = {"x-dropstab-api-key": DROPTABS_KEY}
+HEADERS = {"x-droptab-api-key": DROPTABS_KEY}
+BASE_URL = "https://public-api.droptab.com/api/v1"
 
+# ===== HELPERS =====
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_json(endpoint, params=None):
-    url = f"{DROPTABS_BASE_URL}{endpoint}"
-    r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code == 403:
-        raise RuntimeError("403 Forbidden – check Droptabs plan or key permissions.")
-    r.raise_for_status()
-    return r.json()
+    url = f"{BASE_URL}{endpoint}"
+    r = requests.get(url, headers=HEADERS, params=params or {})
+    try:
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"[error] API failed: {url}, status={r.status_code}, body={r.text}")
+        return None
 
-def extract_rows(data):
-    """Handle Droptabs responses that might be dict-with-data or raw list."""
-    if isinstance(data, dict):
-        return data.get("data", [])
-    elif isinstance(data, list):
-        return data
-    else:
-        return []
+def upsert(table, rows):
+    if not rows:
+        print(f"[warn] No data to upsert into {table}")
+        return
+    try:
+        res = sb.table(table).upsert(rows).execute()
+        print(f"[ok] Upserted {len(rows)} rows into {table}")
+    except Exception as e:
+        print(f"[error] Supabase insert failed for {table}: {e}")
 
-# ========= INGEST UNLOCKS =========
+# ===== INGEST FUNCTIONS =====
 def ingest_unlocks():
-    data = fetch_json("/tokenUnlocks")
+    data = fetch_json("/tokenUnlocks", {"page": 0, "pageSize": 100})
+    if not data:
+        return
     rows = []
-    for d in extract_rows(data):
+    for u in data.get("data", []):
         rows.append({
-            "token": d.get("symbol"),
-            "unlock_date": d.get("unlockDate"),
-            "unlock_amount": d.get("amount"),
-            "unlock_percent": d.get("percent"),
-            "market_cap": d.get("marketCap"),
-            "circulating_supply": d.get("circulatingSupply"),
+            "coin": u.get("coin", {}).get("symbol"),
+            "unlock_date": u.get("date"),
+            "amount": u.get("amount"),
+            "category": u.get("category"),
             "timestamp": iso_now()
         })
-    if rows:
-        sb.table("droptabs_unlocks").upsert(rows).execute()
-        print(f"[Droptabs Unlocks] Upserted {len(rows)} rows")
+    upsert("droptabs_unlocks", rows)
 
-# ========= INGEST SUPPORTED COINS =========
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
-    rows = []
-    for d in extract_rows(data):
-        rows.append({
-            "token": d.get("symbol"),
-            "slug": d.get("slug"),
-            "name": d.get("name"),
-            "timestamp": iso_now()
-        })
-    if rows:
-        sb.table("droptabs_supported_coins").upsert(rows).execute()
-        print(f"[Droptabs Supported Coins] Upserted {len(rows)} rows")
+    if not data:
+        return
+    rows = [{"slug": c.get("slug"), "name": c.get("name"), "symbol": c.get("symbol"), "timestamp": iso_now()} for c in data.get("data", [])]
+    upsert("droptabs_supported_coins", rows)
 
-# ========= INGEST INVESTORS =========
 def ingest_investors():
-    data = fetch_json("/investors")
-    rows = []
-    for d in extract_rows(data):
-        rows.append({
-            "slug": d.get("slug"),
-            "name": d.get("name"),
-            "category": d.get("category"),
-            "website": d.get("website"),
-            "timestamp": iso_now()
-        })
-    if rows:
-        sb.table("droptabs_investors").upsert(rows).execute()
-        print(f"[Droptabs Investors] Upserted {len(rows)} rows")
+    data = fetch_json("/investors", {"page": 0, "pageSize": 100})
+    if not data:
+        return
+    rows = [{"slug": i.get("slug"), "name": i.get("name"), "portfolio_size": i.get("portfolioSize"), "timestamp": iso_now()} for i in data.get("data", [])]
+    upsert("droptabs_investors", rows)
 
-# ========= INGEST FUNDING ROUNDS =========
 def ingest_funding_rounds():
-    data = fetch_json("/fundingRounds")
+    data = fetch_json("/fundingRounds", {"page": 0, "pageSize": 100})
+    if not data:
+        return
     rows = []
-    for d in extract_rows(data):
+    for f in data.get("data", []):
         rows.append({
-            "id": d.get("id"),
-            "project": d.get("project"),
-            "amount": d.get("amount"),
-            "stage": d.get("stage"),
-            "date": d.get("date"),
+            "project": f.get("project", {}).get("name"),
+            "date": f.get("date"),
+            "amount": f.get("fundsRaised"),
+            "round": f.get("roundType"),
             "timestamp": iso_now()
         })
-    if rows:
-        sb.table("droptabs_funding_rounds").upsert(rows).execute()
-        print(f"[Droptabs FundingRounds] Upserted {len(rows)} rows")
+    upsert("droptabs_funding_rounds", rows)
 
-# ========= MAIN LOOP =========
+# ===== MAIN =====
 if __name__ == "__main__":
-    while True:
-        try:
-            ingest_unlocks()
-            ingest_supported_coins()
-            ingest_investors()
-            ingest_funding_rounds()
-        except Exception as e:
-            print("[error]", e)
-        time.sleep(3600)  # run every hour
+    print("Starting Droptabs ingestion...")
+    ingest_unlocks()
+    ingest_supported_coins()
+    ingest_investors()
+    ingest_funding_rounds()
+    print("✅ Done")
 
