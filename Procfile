@@ -16,6 +16,7 @@ binance_liquidations: python binance_liquidations_ingest.py
 binance_orderbook: python ingesters/binance_orderbook_ingest.py
 coinapi: python ingesters/coinapi_ingest.py
 coinglass: python ingesters/coinglass_ingest.py
+droptabs: python ingesters/droptabs_ingest.py
 
 
 
