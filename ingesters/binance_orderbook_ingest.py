@@ -11,19 +11,24 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Binance orderbook stream (top 20 levels, every 100ms)
-STREAM_URL = "wss://fstream.binance.com/ws/btcusdt@depth20@100ms"
+# Symbols we want to track
+SYMBOLS = ["btcusdt", "ethusdt", "bnbusdt", "solusdt"]
 
-async def save_orderbook(snapshot):
-    bids = snapshot.get("bids", [])
-    asks = snapshot.get("asks", [])
-    ts = datetime.fromtimestamp(snapshot["E"] / 1000, tz=timezone.utc).isoformat()
+# Build multi-stream URL
+STREAM_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
+    [f"{s}@depth20@100ms" for s in SYMBOLS]
+)
+
+async def save_orderbook(symbol, data):
+    bids = data.get("bids", [])
+    asks = data.get("asks", [])
+    ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc).isoformat()
 
     rows = []
 
     for i, (price, qty) in enumerate(bids):
         rows.append({
-            "symbol": snapshot["s"],
+            "symbol": symbol.upper(),
             "side": "BID",
             "price": float(price),
             "quantity": float(qty),
@@ -33,7 +38,7 @@ async def save_orderbook(snapshot):
 
     for i, (price, qty) in enumerate(asks):
         rows.append({
-            "symbol": snapshot["s"],
+            "symbol": symbol.upper(),
             "side": "ASK",
             "price": float(price),
             "quantity": float(qty),
@@ -43,15 +48,19 @@ async def save_orderbook(snapshot):
 
     if rows:
         sb.table("binance_orderbook").insert(rows).execute()
-        print(f"[orderbook] Saved {len(rows)} rows for {snapshot['s']}")
+        print(f"[orderbook] {symbol.upper()} {len(rows)} rows")
 
 async def main():
     async with websockets.connect(STREAM_URL) as ws:
-        print("✅ Connected to Binance Order Book Stream")
+        print("✅ Connected to Binance Multi-Symbol Order Book")
         while True:
             msg = await ws.recv()
             data = json.loads(msg)
-            await save_orderbook(data)
+
+            stream = data["stream"]      # e.g. "btcusdt@depth20@100ms"
+            symbol = stream.split("@")[0]
+
+            await save_orderbook(symbol, data["data"])
 
 if __name__ == "__main__":
     asyncio.run(main())
