@@ -9,6 +9,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
+# Allow BASE_URL override from env (default is droptabs.io/api/v1)
+DROPTABS_BASE_URL = os.getenv("DROPTABS_BASE_URL", "https://droptabs.io/api/v1")
+
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 if not DROPTABS_KEY:
@@ -16,14 +19,13 @@ if not DROPTABS_KEY:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BASE_URL = "https://droptabs.io/api/v1"
 HEADERS = {"Authorization": f"Bearer {DROPTABS_KEY}"}
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_json(endpoint, params=None):
-    url = f"{BASE_URL}{endpoint}"
+    url = f"{DROPTABS_BASE_URL}{endpoint}"
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code == 403:
         raise RuntimeError("403 Forbidden – check Droptabs plan or key permissions.")
@@ -33,7 +35,6 @@ def fetch_json(endpoint, params=None):
 # ========= INGEST UNLOCKS =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks")
-
     rows = []
     for d in data.get("data", []):
         rows.append({
@@ -45,7 +46,6 @@ def ingest_unlocks():
             "circulating_supply": d.get("circulatingSupply"),
             "timestamp": iso_now()
         })
-
     if rows:
         sb.table("droptabs_unlocks").upsert(rows).execute()
         print(f"[Droptabs Unlocks] Upserted {len(rows)} rows")
@@ -53,7 +53,6 @@ def ingest_unlocks():
 # ========= INGEST SUPPORTED COINS =========
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
-
     rows = []
     for d in data.get("data", []):
         rows.append({
@@ -62,7 +61,6 @@ def ingest_supported_coins():
             "name": d.get("name"),
             "timestamp": iso_now()
         })
-
     if rows:
         sb.table("droptabs_supported_coins").upsert(rows).execute()
         print(f"[Droptabs Supported Coins] Upserted {len(rows)} rows")
@@ -70,7 +68,6 @@ def ingest_supported_coins():
 # ========= INGEST INVESTORS =========
 def ingest_investors():
     data = fetch_json("/investors")
-
     rows = []
     for d in data.get("data", []):
         rows.append({
@@ -80,7 +77,6 @@ def ingest_investors():
             "website": d.get("website"),
             "timestamp": iso_now()
         })
-
     if rows:
         sb.table("droptabs_investors").upsert(rows).execute()
         print(f"[Droptabs Investors] Upserted {len(rows)} rows")
@@ -88,7 +84,6 @@ def ingest_investors():
 # ========= INGEST FUNDING ROUNDS =========
 def ingest_funding_rounds():
     data = fetch_json("/fundingRounds")
-
     rows = []
     for d in data.get("data", []):
         rows.append({
@@ -99,7 +94,6 @@ def ingest_funding_rounds():
             "date": d.get("date"),
             "timestamp": iso_now()
         })
-
     if rows:
         sb.table("droptabs_funding_rounds").upsert(rows).execute()
         print(f"[Droptabs FundingRounds] Upserted {len(rows)} rows")
@@ -115,4 +109,3 @@ if __name__ == "__main__":
         except Exception as e:
             print("[error]", e)
         time.sleep(3600)  # run every hour
-
