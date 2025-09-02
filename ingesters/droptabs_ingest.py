@@ -16,7 +16,7 @@ if not DROPTABS_KEY:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-BASE_URL = "https://api.droptabs.io/v1"
+BASE_URL = "https://droptabs.io/api/v1"
 HEADERS = {"Authorization": f"Bearer {DROPTABS_KEY}"}
 
 def iso_now():
