@@ -1,5 +1,4 @@
 import os
-import time
 import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
@@ -32,26 +31,34 @@ def fetch_json(endpoint, params=None):
     print(f"🔗 Fetching {url}")
     r = requests.get(url, headers=HEADERS, params=params or {})
     if r.status_code != 200:
-        raise RuntimeError(f"❌ API error {r.status_code} for {url}: {r.text}")
+        print(f"❌ API error {r.status_code} for {url}: {r.text}")
+        return None
     try:
         return r.json()
     except Exception as e:
-        raise RuntimeError(f"❌ Failed to parse JSON from {url}: {e}")
+        print(f"❌ Failed to parse JSON from {url}: {e}")
+        return None
 
 def upsert(table, rows):
     if not rows:
         print(f"⚠️ No rows to upsert into {table}")
         return
     print(f"⬆️ Upserting {len(rows)} rows into {table}")
-    sb.table(table).upsert(rows).execute()
+    try:
+        sb.table(table).upsert(rows).execute()
+    except Exception as e:
+        print(f"❌ Supabase insert failed for {table}: {e}")
 
 # ========= INGESTION =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 100})
+    if not data:
+        return
     rows = []
     for u in data.get("data", []):
         rows.append({
             "token": u.get("coin", {}).get("slug"),
+            "symbol": u.get("coin", {}).get("symbol"),
             "unlock_date": u.get("date"),
             "amount": u.get("amount"),
             "category": u.get("category"),
@@ -61,6 +68,8 @@ def ingest_unlocks():
 
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
+    if not data:
+        return
     rows = []
     for c in data.get("data", []):
         rows.append({
@@ -73,6 +82,8 @@ def ingest_supported_coins():
 
 def ingest_investors():
     data = fetch_json("/investors", {"pageSize": 100})
+    if not data:
+        return
     rows = []
     for inv in data.get("data", []):
         rows.append({
@@ -86,18 +97,21 @@ def ingest_investors():
 
 def ingest_funding_rounds():
     data = fetch_json("/fundingRounds", {"pageSize": 100})
+    if not data:
+        return
     rows = []
     for f in data.get("data", []):
         rows.append({
             "id": f.get("id"),
             "project": f.get("project", {}).get("slug"),
-            "amount": f.get("amount"),
+            "amount": f.get("fundsRaised"),
             "date": f.get("date"),
             "round_type": f.get("roundType"),
             "last_update": iso_now()
         })
     upsert("droptabs_funding_rounds", rows)
 
+# ========= MAIN =========
 def run_all():
     print("🚀 Starting Droptabs ingestion...")
     ingest_supported_coins()
@@ -108,5 +122,6 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
 
 
