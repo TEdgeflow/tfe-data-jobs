@@ -14,6 +14,7 @@ debank_holdings: python debank_holdings_ingest.py
 etherscan_holdings: python etherscan_holdings_ingest.py
 binance_liquidations: python binance_liquidations_ingest.py
 binance_orderbook: python ingesters/binance_orderbook_ingest.py
+coinapi: python ingesters/coinapi_ingest.py
 
 
 
