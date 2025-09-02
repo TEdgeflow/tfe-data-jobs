@@ -25,9 +25,21 @@ def iso_now():
 def fetch_json(url, params=None):
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code == 403:
-        raise RuntimeError("403 Forbidden – your CoinAPI plan may not include this endpoint.")
+        raise RuntimeError("403 Forbidden – CoinAPI plan may not include this endpoint.")
     r.raise_for_status()
     return r.json()
+
+def parse_symbol(symbol_id: str):
+    """
+    Example CoinAPI symbol_id:
+    BINANCE_PERP_BTC_USDT
+    OKX_PERP_ETH_USDT
+    """
+    parts = symbol_id.split("_")
+    base, quote = None, None
+    if len(parts) >= 4:
+        base, quote = parts[-2], parts[-1]
+    return base, quote
 
 def ingest_open_interest():
     url = f"{BASE_URL}/derivatives/openinterest"
@@ -35,8 +47,13 @@ def ingest_open_interest():
 
     rows = []
     for d in data:
+        symbol = d.get("symbol_id")
+        base, quote = parse_symbol(symbol)
         rows.append({
-            "symbol": d.get("symbol_id"),
+            "symbol": symbol,
+            "base_asset": base,
+            "quote_asset": quote,
+            "exchange": d.get("exchange_id"),
             "oi": d.get("open_interest_usd"),
             "timestamp": d.get("time") or iso_now()
         })
@@ -51,8 +68,13 @@ def ingest_funding():
 
     rows = []
     for d in data:
+        symbol = d.get("symbol_id")
+        base, quote = parse_symbol(symbol)
         rows.append({
-            "symbol": d.get("symbol_id"),
+            "symbol": symbol,
+            "base_asset": base,
+            "quote_asset": quote,
+            "exchange": d.get("exchange_id"),
             "funding_rate": d.get("funding_rate"),
             "timestamp": d.get("time") or iso_now()
         })
@@ -69,4 +91,5 @@ if __name__ == "__main__":
         except Exception as e:
             print("[error]", e)
         time.sleep(300)  # every 5 minutes
+
 
