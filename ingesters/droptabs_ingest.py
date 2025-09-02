@@ -35,11 +35,20 @@ def fetch_json(endpoint, params=None):
     r.raise_for_status()
     return r.json()
 
+def extract_rows(data):
+    """Handle Droptabs responses that might be dict-with-data or raw list."""
+    if isinstance(data, dict):
+        return data.get("data", [])
+    elif isinstance(data, list):
+        return data
+    else:
+        return []
+
 # ========= INGEST UNLOCKS =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks")
     rows = []
-    for d in data.get("data", []):
+    for d in extract_rows(data):
         rows.append({
             "token": d.get("symbol"),
             "unlock_date": d.get("unlockDate"),
@@ -57,7 +66,7 @@ def ingest_unlocks():
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
     rows = []
-    for d in data.get("data", []):
+    for d in extract_rows(data):
         rows.append({
             "token": d.get("symbol"),
             "slug": d.get("slug"),
@@ -72,7 +81,7 @@ def ingest_supported_coins():
 def ingest_investors():
     data = fetch_json("/investors")
     rows = []
-    for d in data.get("data", []):
+    for d in extract_rows(data):
         rows.append({
             "slug": d.get("slug"),
             "name": d.get("name"),
@@ -88,7 +97,7 @@ def ingest_investors():
 def ingest_funding_rounds():
     data = fetch_json("/fundingRounds")
     rows = []
-    for d in data.get("data", []):
+    for d in extract_rows(data):
         rows.append({
             "id": d.get("id"),
             "project": d.get("project"),
