@@ -9,8 +9,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-# Allow BASE_URL override from env (default is droptabs.io/api/v1)
-DROPTABS_BASE_URL = os.getenv("DROPTABS_BASE_URL", "https://droptabs.io/api/v1")
+# Correct production base URL
+DROPTABS_BASE_URL = os.getenv(
+    "DROPTABS_BASE_URL", "https://public-api.dropstab.com/api/v1"
+)
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
@@ -19,7 +21,8 @@ if not DROPTABS_KEY:
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {"Authorization": f"Bearer {DROPTABS_KEY}"}
+# Correct header (per Droptabs docs)
+HEADERS = {"x-dropstab-api-key": DROPTABS_KEY}
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
@@ -109,3 +112,4 @@ if __name__ == "__main__":
         except Exception as e:
             print("[error]", e)
         time.sleep(3600)  # run every hour
+
