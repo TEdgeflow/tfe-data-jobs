@@ -1,4 +1,5 @@
-import os, requests
+import os
+import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
@@ -7,33 +8,52 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("❌ Missing Supabase credentials")
+
+if not DROPTABS_KEY:
+    raise RuntimeError("❌ Missing Droptabs API key")
+
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY
+    "x-droptab-api-key": DROPTABS_KEY
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
+# ========= HELPERS =========
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_json(endpoint, params=None):
     url = f"{BASE_URL}{endpoint}"
     print(f"🔗 Fetching {url}")
-    r = requests.get(url, headers=HEADERS, params=params or {})
-    if r.status_code != 200:
-        print(f"❌ API error {r.status_code}: {r.text}")
+    try:
+        r = requests.get(url, headers=HEADERS, params=params or {})
+        if r.status_code != 200:
+            print(f"❌ API error {r.status_code} for {url}: {r.text}")
+            return None
+        return r.json()
+    except Exception as e:
+        print(f"❌ Request failed for {url}: {e}")
         return None
-    return r.json()
 
 def upsert(table, rows):
-    if not rows: return
-    sb.table(table).upsert(rows).execute()
+    if not rows:
+        print(f"⚠️ No rows to upsert into {table}")
+        return
+    try:
+        sb.table(table).upsert(rows).execute()
+        print(f"⬆️ Upserted {len(rows)} rows into {table}")
+    except Exception as e:
+        print(f"❌ Supabase insert failed for {table}: {e}")
 
+# ========= INGESTION =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 100})
-    if not data: return
+    if not data:
+        return
     rows = []
     for u in data.get("data", []):
         rows.append({
@@ -48,19 +68,35 @@ def ingest_unlocks():
 
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
-    if not data: return
+    if not data:
+        return
+
     rows = []
     for c in data.get("data", []):
-        rows.append({
-            "slug": c.get("slug"),
-            "symbol": c.get("symbol"),
-            "name": c.get("name"),
-            "last_update": iso_now()
-        })
+        if isinstance(c, dict):  # full object with details
+            rows.append({
+                "slug": c.get("slug"),
+                "symbol": c.get("symbol"),
+                "name": c.get("name"),
+                "last_update": iso_now()
+            })
+        elif isinstance(c, str):  # plain string slug
+            rows.append({
+                "slug": c,
+                "symbol": None,
+                "name": None,
+                "last_update": iso_now()
+            })
+
     upsert("droptabs_supported_coins", rows)
 
-if __name__ == "__main__":
-    print("🚀 Droptabs Unlocks ingestion...")
+# ========= MAIN =========
+def run_all():
+    print("🚀 Starting Droptabs Unlocks ingestion...")
     ingest_supported_coins()
     ingest_unlocks()
-    print("✅ Done unlocks")
+    print("✅ Finished Droptabs Unlocks ingestion.")
+
+if __name__ == "__main__":
+    run_all()
+
