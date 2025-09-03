@@ -17,9 +17,10 @@ binance_orderbook: python ingesters/binance_orderbook_ingest.py
 coinapi: python ingesters/coinapi_ingest.py
 coinglass: python ingesters/coinglass_ingest.py
 droptabs: python ingesters/droptabs_ingest.py
-worker: python ingesters/droptabs_unlocks_ingest.py
-worker_investors: python ingesters/droptabs_investors_ingest.py
-worker_funding: python ingesters/droptabs_funding_ingest.py
+droptabs_unlocks: python ingesters/droptabs_unlocks_ingest.py
+droptabs_investors: python ingesters/droptabs_investors_ingest.py
+droptabs_funding: python ingesters/droptabs_funding_ingest.py
+
 
 
 
