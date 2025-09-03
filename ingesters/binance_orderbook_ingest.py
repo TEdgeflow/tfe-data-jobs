@@ -11,11 +11,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Symbols we want to track
+# Symbols to track
 SYMBOLS = ["btcusdt", "ethusdt", "bnbusdt", "solusdt"]
 
+# Try lighter stream (less disconnects)
 STREAM_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
-    [f"{s}@depth20@100ms" for s in SYMBOLS]
+    [f"{s}@depth10@500ms" for s in SYMBOLS]
 )
 
 BUFFER = []
@@ -40,7 +41,7 @@ async def handle_message(symbol, data):
     ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc).isoformat()
 
     rows = []
-    for i, (price, qty) in enumerate(bids[:10]):  # top 10 bids
+    for i, (price, qty) in enumerate(bids[:10]):
         rows.append({
             "symbol": symbol.upper(),
             "side": "BID",
@@ -49,7 +50,7 @@ async def handle_message(symbol, data):
             "depth_level": i + 1,
             "time": ts
         })
-    for i, (price, qty) in enumerate(asks[:10]):  # top 10 asks
+    for i, (price, qty) in enumerate(asks[:10]):
         rows.append({
             "symbol": symbol.upper(),
             "side": "ASK",
@@ -67,21 +68,23 @@ async def stream_orderbook():
         try:
             async with websockets.connect(
                 STREAM_URL,
-                ping_interval=20,   # keepalive every 20s
-                ping_timeout=20
+                ping_interval=15,
+                ping_timeout=15
             ) as ws:
-                print("✅ Connected to Binance Multi-Symbol Order Book")
-
+                print("✅ Connected to Binance Order Book stream")
                 while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
-                    stream = data["stream"]
-                    symbol = stream.split("@")[0]
-                    await handle_message(symbol, data["data"])
-
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        data = json.loads(msg)
+                        stream = data["stream"]
+                        symbol = stream.split("@")[0]
+                        await handle_message(symbol, data["data"])
+                    except asyncio.TimeoutError:
+                        print("⚠️ No message for 30s, sending ping...")
+                        await ws.ping()
         except Exception as e:
             print(f"⚠️ Websocket error: {e}, retrying in 5s...")
-            await asyncio.sleep(5)  # wait before reconnect
+            await asyncio.sleep(5)
 
 
 async def scheduler():
