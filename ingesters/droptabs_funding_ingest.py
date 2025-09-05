@@ -10,7 +10,6 @@ DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("❌ Missing Supabase credentials")
-
 if not DROPTABS_KEY:
     raise RuntimeError("❌ Missing Droptabs API key")
 
@@ -18,11 +17,10 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY  # ✅ Correct header
+    "x-dropstab-api-key": DROPTABS_KEY
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
-# ========= HELPERS =========
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -49,12 +47,10 @@ def upsert(table, rows):
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
-# ========= INGESTION =========
 def ingest_funding_rounds():
     data = fetch_json("/fundingRounds", {"pageSize": 100})
     if not data:
         return
-
     rows = []
     for f in data.get("data", []):
         if isinstance(f, dict):
@@ -65,11 +61,10 @@ def ingest_funding_rounds():
                 "round_type": f.get("roundType"),
                 "last_update": iso_now()
             })
-
     upsert("droptabs_funding", rows)
 
-# ========= MAIN =========
 if __name__ == "__main__":
     print("🚀 Starting Droptabs Funding ingestion...")
     ingest_funding_rounds()
     print("✅ Finished Droptabs Funding ingestion.")
+
