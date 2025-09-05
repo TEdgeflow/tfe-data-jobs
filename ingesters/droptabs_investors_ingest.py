@@ -18,7 +18,7 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-droptab-api-key": DROPTABS_KEY
+    "Authorization": f"Bearer {DROPTABS_KEY}"  # ✅ FIXED
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
@@ -55,11 +55,9 @@ def ingest_investors():
     if not data:
         return
 
-    print("🔍 Raw investors response:", data)  # DEBUG
-
     rows = []
     for inv in data.get("data", []):
-        if isinstance(inv, dict):   # ✅ Only handle dicts
+        if isinstance(inv, dict):
             rows.append({
                 "slug": inv.get("slug"),
                 "name": inv.get("name"),
@@ -67,8 +65,6 @@ def ingest_investors():
                 "rounds_per_year": inv.get("roundsPerYear"),
                 "last_update": iso_now()
             })
-        else:
-            print(f"⚠️ Skipping non-dict item in investors: {inv}")
 
     upsert("droptabs_investors", rows)
 
