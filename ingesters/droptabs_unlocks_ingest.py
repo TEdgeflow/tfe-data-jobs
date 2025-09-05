@@ -3,6 +3,7 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
@@ -20,20 +21,21 @@ HEADERS = {
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
+# ========= HELPERS =========
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_json(endpoint, params=None):
     url = f"{BASE_URL}{endpoint}"
     print(f"🔗 Fetching {url}")
-    r = requests.get(url, headers=HEADERS, params=params or {})
-    if r.status_code != 200:
-        print(f"❌ API error {r.status_code} for {url}: {r.text}")
-        return None
     try:
+        r = requests.get(url, headers=HEADERS, params=params or {})
+        if r.status_code != 200:
+            print(f"❌ API error {r.status_code} for {url}: {r.text}")
+            return None
         return r.json()
     except Exception as e:
-        print(f"❌ Failed to parse JSON from {url}: {e}")
+        print(f"❌ Request failed for {url}: {e}")
         return None
 
 def upsert(table, rows):
@@ -46,13 +48,17 @@ def upsert(table, rows):
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
+# ========= INGESTION =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 100})
     if not data:
         return
+
     rows = []
     for u in data.get("data", []):
         coin = u.get("coin")
+
+        # Handle dict, string, or missing values safely
         if isinstance(coin, dict):
             slug = coin.get("slug")
             symbol = coin.get("symbol")
@@ -61,6 +67,7 @@ def ingest_unlocks():
             symbol = None
         else:
             slug, symbol = None, None
+
         rows.append({
             "token": slug,
             "symbol": symbol,
@@ -69,12 +76,14 @@ def ingest_unlocks():
             "category": u.get("category"),
             "last_update": iso_now()
         })
+
     upsert("droptabs_unlocks", rows)
 
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
     if not data:
         return
+
     rows = []
     for c in data.get("data", []):
         if isinstance(c, dict):
@@ -91,8 +100,10 @@ def ingest_supported_coins():
                 "name": None,
                 "last_update": iso_now()
             })
+
     upsert("droptabs_supported_coins", rows)
 
+# ========= MAIN =========
 def run_all():
     print("🚀 Starting Droptabs Unlocks ingestion...")
     ingest_supported_coins()
@@ -101,4 +112,5 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
 
