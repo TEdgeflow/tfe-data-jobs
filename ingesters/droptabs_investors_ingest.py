@@ -3,14 +3,12 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("❌ Missing Supabase credentials")
-
 if not DROPTABS_KEY:
     raise RuntimeError("❌ Missing Droptabs API key")
 
@@ -18,11 +16,10 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY  # ✅ Correct header
+    "x-dropstab-api-key": DROPTABS_KEY
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
-# ========= HELPERS =========
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -49,12 +46,10 @@ def upsert(table, rows):
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
-# ========= INGESTION =========
 def ingest_investors():
     data = fetch_json("/investors", {"pageSize": 100})
     if not data:
         return
-
     rows = []
     for inv in data.get("data", []):
         if isinstance(inv, dict):
@@ -65,12 +60,11 @@ def ingest_investors():
                 "rounds_per_year": inv.get("roundsPerYear"),
                 "last_update": iso_now()
             })
-
     upsert("droptabs_investors", rows)
 
-# ========= MAIN =========
 if __name__ == "__main__":
     print("🚀 Starting Droptabs Investors ingestion...")
     ingest_investors()
     print("✅ Finished Droptabs Investors ingestion.")
+
 
