@@ -18,7 +18,7 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-droptab-api-key": DROPTABS_KEY
+    "Authorization": f"Bearer {DROPTABS_KEY}"  # ✅ FIXED
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
@@ -55,26 +55,21 @@ def ingest_funding_rounds():
     if not data:
         return
 
-    print("🔍 Raw funding rounds response:", data)  # DEBUG
-
     rows = []
     for f in data.get("data", []):
-        if isinstance(f, dict):   # ✅ Only handle dicts
+        if isinstance(f, dict):
             rows.append({
-                "id": f.get("id"),
                 "project": f.get("project", {}).get("slug") if isinstance(f.get("project"), dict) else None,
                 "amount": f.get("fundsRaised"),
                 "date": f.get("date"),
                 "round_type": f.get("roundType"),
                 "last_update": iso_now()
             })
-        else:
-            print(f"⚠️ Skipping non-dict item in fundingRounds: {f}")
 
-    upsert("droptabs_funding_rounds", rows)
+    upsert("droptabs_funding", rows)
 
 # ========= MAIN =========
 if __name__ == "__main__":
-    print("🚀 Starting Droptabs Funding Rounds ingestion...")
+    print("🚀 Starting Droptabs Funding ingestion...")
     ingest_funding_rounds()
-    print("✅ Finished Droptabs Funding Rounds ingestion.")
+    print("✅ Finished Droptabs Funding ingestion.")
