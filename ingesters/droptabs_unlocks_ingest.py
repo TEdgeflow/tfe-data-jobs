@@ -1,46 +1,32 @@
 import os
 import requests
-from supabase import create_client, Client
-from datetime import datetime
+from supabase import create_client
 
-# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://public-api.dropstab.com/api/v1"
-HEADERS = {"api_key": DROPTABS_KEY}
 
-def fetch_api(endpoint):
-    url = f"{BASE_URL}/{endpoint}"
-    resp = requests.get(url, headers=HEADERS, params={"pageSize": 50, "page": 0})
-    resp.raise_for_status()
-    data = resp.json()
-    return data.get("data", {}).get("content", [])
+HEADERS = {
+    "accept": "application/json",
+    "x-dropstab-api-key": DROPTABS_KEY
+}
 
-# ---- Ingest Supported Coins ----
-def ingest_supported_coins():
-    print("📥 Fetching supported coins...")
-    rows = fetch_api("tokenUnlocks/supportedCoins")
-    for c in rows:
-        sb.table("droptabs_supported_coins").upsert({
-            "id": c.get("id"),
-            "slug": c.get("coinSlug") or c.get("slug"),
-            "symbol": c.get("coinSymbol") or c.get("symbol"),
-            "name": c.get("name"),
-            "last_update": datetime.utcnow().isoformat()
-        }).execute()
-    print(f"✅ Inserted {len(rows)} supported coins")
+def fetch_unlocks(page_size=5):
+    url = f"{BASE_URL}/tokenUnlocks?pageSize={page_size}"
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
 
-# ---- Ingest Unlocks ----
-def ingest_unlocks():
-    print("📥 Fetching unlocks...")
-    rows = fetch_api("tokenUnlocks")
-    for u in rows:
-        sb.table("droptabs_unlocks").upsert({
-            "id": u.get("id"),
+def run_all():
+    print("🚀 Fetching unlocks...")
+    data = fetch_unlocks(page_size=50)
+    rows = []
+    for u in data.get("data", {}).get("content", []):
+        rows.append({
             "coin_id": u.get("coinId"),
             "coin_slug": u.get("coinSlug"),
             "coin_symbol": u.get("coinSymbol"),
@@ -51,16 +37,17 @@ def ingest_unlocks():
             "unlocked_percent": u.get("totalTokensUnlockedPercent"),
             "locked_percent": u.get("totalTokensLockedPercent"),
             "tge_date": u.get("tgeDate"),
-            "last_update": datetime.utcnow().isoformat()
-        }).execute()
-    print(f"✅ Inserted {len(rows)} unlocks")
-
-def run_all():
-    ingest_supported_coins()
-    ingest_unlocks()
+            "last_update": u.get("updatedAt")
+        })
+    if rows:
+        supabase.table("droptabs_unlocks").upsert(rows).execute()
+        print(f"✅ Inserted {len(rows)} rows")
+    else:
+        print("⚠️ No rows to insert")
 
 if __name__ == "__main__":
     run_all()
+
 
 
 
