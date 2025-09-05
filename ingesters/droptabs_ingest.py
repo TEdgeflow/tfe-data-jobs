@@ -18,9 +18,8 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-api-key": DROPTABS_KEY
+    "x-droptab-api-key": DROPTABS_KEY  # ✅ working header (do not change)
 }
-
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
 # ========= HELPERS =========
@@ -33,7 +32,7 @@ def fetch_json(endpoint, params=None):
     try:
         r = requests.get(url, headers=HEADERS, params=params or {})
         if r.status_code != 200:
-            print(f"❌ API error {r.status_code}: {r.text}")
+            print(f"❌ API error {r.status_code} for {url}: {r.text}")
             return None
         return r.json()
     except Exception as e:
@@ -46,7 +45,7 @@ def upsert(table, rows):
         return
     try:
         sb.table(table).upsert(rows).execute()
-        print(f"✅ Inserted {len(rows)} rows into {table}")
+        print(f"⬆️ Inserted {len(rows)} rows into {table}")
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
@@ -55,6 +54,7 @@ def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins", {"pageSize": 50, "page": 0})
     if not data or "data" not in data:
         return
+
     rows = []
     for c in data["data"]:
         rows.append({
@@ -70,13 +70,13 @@ def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 50, "page": 0})
     if not data or "data" not in data:
         return
+
     rows = []
-    for u in data["data"]:
-        coin = u.get("coin", {}) if isinstance(u.get("coin"), dict) else {}
+    for u in data["data"].get("content", []):  # ✅ unlocks use content list
         rows.append({
-            "coin_id": coin.get("id"),
-            "coin_slug": coin.get("slug"),
-            "coin_symbol": coin.get("symbol"),
+            "coin_id": u.get("coinId"),
+            "coin_slug": u.get("coinSlug"),
+            "coin_symbol": u.get("coinSymbol"),
             "price_usd": u.get("priceUsd"),
             "market_cap": u.get("marketCap"),
             "fdv": u.get("fdv"),
@@ -92,6 +92,7 @@ def ingest_investors():
     data = fetch_json("/investors", {"pageSize": 50, "page": 0})
     if not data or "data" not in data:
         return
+
     rows = []
     for inv in data["data"]:
         rows.append({
@@ -103,16 +104,16 @@ def ingest_investors():
         })
     upsert("droptabs_investors", rows)
 
-def ingest_funding_rounds():
+def ingest_funding():
     data = fetch_json("/fundingRounds", {"pageSize": 50, "page": 0})
     if not data or "data" not in data:
         return
+
     rows = []
     for f in data["data"]:
-        proj = f.get("project", {}) if isinstance(f.get("project"), dict) else {}
         rows.append({
             "id": f.get("id"),
-            "project": proj.get("slug"),
+            "project": f.get("project", {}).get("slug") if isinstance(f.get("project"), dict) else None,
             "amount": f.get("fundsRaised"),
             "date": f.get("date"),
             "round_type": f.get("roundType"),
@@ -134,14 +135,10 @@ def run_all():
     ingest_investors()
 
     print("📌 Funding Rounds...")
-    ingest_funding_rounds()
+    ingest_funding()
 
     print("✅ Finished Droptabs ingestion.")
 
 if __name__ == "__main__":
     run_all()
-
-
-
-
 
