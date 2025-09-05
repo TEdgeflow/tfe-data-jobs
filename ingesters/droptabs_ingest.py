@@ -48,12 +48,20 @@ def upsert(table, rows):
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
+def normalize_coin(coin):
+    """Handle Droptabs coin field (can be dict or string)."""
+    if isinstance(coin, dict):
+        return coin.get("slug"), coin.get("symbol")
+    elif isinstance(coin, str):
+        return coin, None
+    else:
+        return None, None
+
 # ========= INGESTORS =========
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
     if not data:
         return
-
     print("🔍 Raw supportedCoins response:", data)  # DEBUG
 
     rows = []
@@ -74,29 +82,17 @@ def ingest_supported_coins():
             })
         else:
             print(f"⚠️ Skipping unexpected supportedCoin: {c}")
-
     upsert("droptabs_supported_coins", rows)
 
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 100})
     if not data:
         return
-
     print("🔍 Raw unlocks response:", data)  # DEBUG
 
     rows = []
     for u in data.get("data", []):
-        coin = u.get("coin")
-
-        slug, symbol = None, None
-        if isinstance(coin, dict):       # ✅ proper object
-            slug = coin.get("slug")
-            symbol = coin.get("symbol")
-        elif isinstance(coin, str):      # ✅ plain string
-            slug = coin
-        else:
-            print(f"⚠️ Unexpected coin format: {coin}")
-
+        slug, symbol = normalize_coin(u.get("coin"))
         rows.append({
             "token": slug,
             "symbol": symbol,
@@ -105,14 +101,12 @@ def ingest_unlocks():
             "category": u.get("category"),
             "last_update": iso_now()
         })
-
     upsert("droptabs_unlocks", rows)
 
 def ingest_investors():
     data = fetch_json("/investors", {"pageSize": 100})
     if not data:
         return
-
     print("🔍 Raw investors response:", data)  # DEBUG
 
     rows = []
@@ -127,14 +121,12 @@ def ingest_investors():
             })
         else:
             print(f"⚠️ Skipping invalid investor: {inv}")
-
     upsert("droptabs_investors", rows)
 
 def ingest_funding():
     data = fetch_json("/fundingRounds", {"pageSize": 100})
     if not data:
         return
-
     print("🔍 Raw funding response:", data)  # DEBUG
 
     rows = []
@@ -150,7 +142,6 @@ def ingest_funding():
             })
         else:
             print(f"⚠️ Skipping invalid funding record: {f}")
-
     upsert("droptabs_funding", rows)
 
 # ========= MAIN =========
