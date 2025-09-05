@@ -10,7 +10,7 @@ DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://public-api.dropstab.com/api/v1"
-HEADERS = {"x-api-key": DROPTABS_KEY}
+HEADERS = {"api-key": DROPTABS_KEY}
 
 def fetch_api(endpoint, params=None):
     url = f"{BASE_URL}/{endpoint}"
