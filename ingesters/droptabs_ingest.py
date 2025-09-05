@@ -8,54 +8,52 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
-
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://public-api.dropstab.com/api/v1"
-HEADERS = {"api_key": DROPTABS_KEY}
 
-def fetch_api(endpoint, params=None):
+def fetch_api(endpoint):
     url = f"{BASE_URL}/{endpoint}"
-    resp = requests.get(url, headers=HEADERS, params=params or {"pageSize": 50, "page": 0})
+    print(f"🔗 Fetching {url}")
+    resp = requests.get(url, params={"api_key": DROPTABS_KEY, "pageSize": 50, "page": 0})
     resp.raise_for_status()
     data = resp.json()
     return data.get("data", {}).get("content", [])
 
-# ===================== INGEST FUNCTIONS =====================
-
+# ---- Ingest Supported Coins ----
 def ingest_supported_coins():
     print("📥 Fetching supported coins...")
     rows = fetch_api("tokenUnlocks/supportedCoins")
-    for r in rows:
+    for c in rows:
         sb.table("droptabs_supported_coins").upsert({
-            "id": r.get("id"),
-            "slug": r.get("coin", {}).get("slug"),
-            "symbol": r.get("coin", {}).get("symbol"),
+            "id": c.get("id"),
+            "slug": c.get("coinSlug") or c.get("slug"),
+            "symbol": c.get("coinSymbol") or c.get("symbol"),
+            "name": c.get("name"),
             "last_update": datetime.utcnow().isoformat()
         }).execute()
+    print(f"✅ Inserted {len(rows)} supported coins")
 
+# ---- Ingest Unlocks ----
 def ingest_unlocks():
     print("📥 Fetching unlocks...")
     rows = fetch_api("tokenUnlocks")
     for u in rows:
         sb.table("droptabs_unlocks").upsert({
             "id": u.get("id"),
-            "coin_id": u.get("coin", {}).get("id"),
-            "coin_slug": u.get("coin", {}).get("slug"),
-            "coin_symbol": u.get("coin", {}).get("symbol"),
+            "coin_id": u.get("coinId"),
+            "coin_slug": u.get("coinSlug"),
+            "coin_symbol": u.get("coinSymbol"),
             "price_usd": u.get("priceUsd"),
             "market_cap": u.get("marketCap"),
             "fdv": u.get("fdv"),
-            "circulation_supply_percent": u.get("circulatingSupplyPercent"),
-            "unlocked_percent": u.get("unlockedPercent"),
-            "locked_percent": u.get("lockedPercent"),
+            "circulation_supply_percent": u.get("circulationSupplyPercent"),
+            "unlocked_percent": u.get("totalTokensUnlockedPercent"),
+            "locked_percent": u.get("totalTokensLockedPercent"),
             "tge_date": u.get("tgeDate"),
             "last_update": datetime.utcnow().isoformat()
         }).execute()
-
-# ===================== MAIN =====================
+    print(f"✅ Inserted {len(rows)} unlocks")
 
 def run_all():
     ingest_supported_coins()
@@ -63,4 +61,5 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
 
