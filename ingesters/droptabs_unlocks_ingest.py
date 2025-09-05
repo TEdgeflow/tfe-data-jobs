@@ -18,7 +18,7 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "Authorization": f"Bearer {DROPTABS_KEY}"  # ✅ FIXED
+    "x-dropstab-api-key": DROPTABS_KEY  # ✅ Correct header
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
@@ -102,3 +102,4 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
