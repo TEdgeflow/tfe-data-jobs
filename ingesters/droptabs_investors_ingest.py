@@ -1,70 +1,49 @@
 import os
 import requests
-from datetime import datetime, timezone
 from supabase import create_client, Client
+from datetime import datetime
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("❌ Missing Supabase credentials")
-if not DROPTABS_KEY:
-    raise RuntimeError("❌ Missing Droptabs API key")
-
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {
-    "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY
-}
 BASE_URL = "https://public-api.dropstab.com/api/v1"
+HEADERS = {"api_key": DROPTABS_KEY}
 
-def iso_now():
-    return datetime.now(timezone.utc).isoformat()
-
-def fetch_json(endpoint, params=None):
-    url = f"{BASE_URL}{endpoint}"
-    print(f"🔗 Fetching {url}")
-    r = requests.get(url, headers=HEADERS, params=params or {})
-    if r.status_code != 200:
-        print(f"❌ API error {r.status_code} for {url}: {r.text}")
-        return None
-    try:
-        return r.json()
-    except Exception as e:
-        print(f"❌ Failed to parse JSON from {url}: {e}")
-        return None
-
-def upsert(table, rows):
-    if not rows:
-        print(f"⚠️ No rows to upsert into {table}")
-        return
-    print(f"⬆️ Upserting {len(rows)} rows into {table}")
-    try:
-        sb.table(table).upsert(rows).execute()
-    except Exception as e:
-        print(f"❌ Supabase insert failed for {table}: {e}")
+def fetch_api(endpoint, params=None):
+    url = f"{BASE_URL}/{endpoint}"
+    resp = requests.get(url, headers=HEADERS, params=params or {"pageSize": 50, "page": 0})
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("data", {}).get("content", [])
 
 def ingest_investors():
-    data = fetch_json("/investors", {"pageSize": 100})
-    if not data:
-        return
-    rows = []
-    for inv in data.get("data", []):
-        if isinstance(inv, dict):
-            rows.append({
-                "slug": inv.get("slug"),
-                "name": inv.get("name"),
-                "portfolio_size": inv.get("portfolioSize"),
-                "rounds_per_year": inv.get("roundsPerYear"),
-                "last_update": iso_now()
-            })
-    upsert("droptabs_investors", rows)
+    print("📥 Fetching investors...")
+    rows = fetch_api("investors")
+    for inv in rows:
+        sb.table("droptabs_investors").upsert({
+            "id": inv.get("id"),
+            "investor_slug": inv.get("investorSlug"),
+            "name": inv.get("name"),
+            "rank": inv.get("rank"),
+            "country": inv.get("country"),
+            "description": inv.get("description"),
+            "venture_type": inv.get("ventureType"),
+            "tier": inv.get("tier"),
+            "twitter_score": inv.get("twitterScore"),
+            "last_round_date": inv.get("lastRoundDate"),
+            "rounds_per_year": inv.get("roundsPerYear"),
+            "public_sales_count": inv.get("publicSalesCount"),
+            "retail_roi_percent": inv.get("retailRoiPercent"),
+            "private_roi_percent": inv.get("privateRoiPercent"),
+            "total_investments": inv.get("totalInvestments"),
+            "lead_investments": inv.get("leadInvestments"),
+            "portfolio_coins_count": inv.get("portfolioCoinsCount"),
+            "last_update": datetime.utcnow().isoformat()
+        }).execute()
+    print(f"✅ Inserted {len(rows)} investor rows")
 
 if __name__ == "__main__":
-    print("🚀 Starting Droptabs Investors ingestion...")
     ingest_investors()
-    print("✅ Finished Droptabs Investors ingestion.")
-
-
