@@ -3,14 +3,12 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
-# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("❌ Missing Supabase credentials")
-
 if not DROPTABS_KEY:
     raise RuntimeError("❌ Missing Droptabs API key")
 
@@ -18,11 +16,10 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {
     "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY  # ✅ Correct header
+    "x-dropstab-api-key": DROPTABS_KEY
 }
 BASE_URL = "https://public-api.dropstab.com/api/v1"
 
-# ========= HELPERS =========
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -49,31 +46,35 @@ def upsert(table, rows):
     except Exception as e:
         print(f"❌ Supabase insert failed for {table}: {e}")
 
-# ========= INGESTION =========
 def ingest_unlocks():
     data = fetch_json("/tokenUnlocks", {"pageSize": 100})
     if not data:
         return
-
     rows = []
     for u in data.get("data", []):
-        coin = u.get("coin") if isinstance(u.get("coin"), dict) else {}
+        coin = u.get("coin")
+        if isinstance(coin, dict):
+            slug = coin.get("slug")
+            symbol = coin.get("symbol")
+        elif isinstance(coin, str):
+            slug = coin
+            symbol = None
+        else:
+            slug, symbol = None, None
         rows.append({
-            "token": coin.get("slug"),
-            "symbol": coin.get("symbol"),
+            "token": slug,
+            "symbol": symbol,
             "unlock_date": u.get("date"),
             "amount": u.get("amount"),
             "category": u.get("category"),
             "last_update": iso_now()
         })
-
     upsert("droptabs_unlocks", rows)
 
 def ingest_supported_coins():
     data = fetch_json("/tokenUnlocks/supportedCoins")
     if not data:
         return
-
     rows = []
     for c in data.get("data", []):
         if isinstance(c, dict):
@@ -90,10 +91,8 @@ def ingest_supported_coins():
                 "name": None,
                 "last_update": iso_now()
             })
-
     upsert("droptabs_supported_coins", rows)
 
-# ========= MAIN =========
 def run_all():
     print("🚀 Starting Droptabs Unlocks ingestion...")
     ingest_supported_coins()
