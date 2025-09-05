@@ -3,6 +3,7 @@ import requests
 from supabase import create_client, Client
 from datetime import datetime
 
+# 🔑 Environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
@@ -10,18 +11,31 @@ DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://public-api.dropstab.com/api/v1"
-HEADERS = {"api_key": DROPTABS_KEY}
+HEADERS = {"api_key": DROPTABS_KEY}  # first attempt
 
 def fetch_api(endpoint, params=None):
     url = f"{BASE_URL}/{endpoint}"
-    resp = requests.get(url, headers=HEADERS, params=params or {"pageSize": 50, "page": 0})
+    params = params or {"pageSize": 50, "page": 0}
+
+    print("📡 Requesting:", url)
+    print("🔑 Headers:", HEADERS)
+
+    resp = requests.get(url, headers=HEADERS, params=params)
+
+    if resp.status_code == 401:  # Unauthorized
+        print("⚠️ Header auth failed, retrying with query param...")
+        params["api_key"] = DROPTABS_KEY
+        resp = requests.get(url, params=params)
+
+    print("📥 Response status:", resp.status_code)
     resp.raise_for_status()
     data = resp.json()
     return data.get("data", {}).get("content", [])
 
 def ingest_investors():
-    print("📥 Fetching investors...")
+    print("🚀 Fetching investors...")
     rows = fetch_api("investors")
+
     for inv in rows:
         sb.table("droptabs_investors").upsert({
             "id": inv.get("id"),
@@ -43,7 +57,12 @@ def ingest_investors():
             "portfolio_coins_count": inv.get("portfolioCoinsCount"),
             "last_update": datetime.utcnow().isoformat()
         }).execute()
-    print(f"✅ Inserted {len(rows)} investor rows")
+
+    print(f"✅ Inserted {len(rows)} investors")
+
+def run_all():
+    ingest_investors()
 
 if __name__ == "__main__":
-    ingest_investors()
+    run_all()
+
