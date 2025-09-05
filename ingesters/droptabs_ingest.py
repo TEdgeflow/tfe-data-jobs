@@ -1,51 +1,66 @@
 import os
 import requests
-from supabase import create_client
+from supabase import create_client, Client
+from datetime import datetime
 
+# ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
+
+sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BASE_URL = "https://public-api.dropstab.com/api/v1"
+HEADERS = {"api_key": DROPTABS_KEY}
 
-HEADERS = {
-    "accept": "application/json",
-    "x-dropstab-api-key": DROPTABS_KEY
-}
+def fetch_api(endpoint, params=None):
+    url = f"{BASE_URL}/{endpoint}"
+    resp = requests.get(url, headers=HEADERS, params=params or {"pageSize": 50, "page": 0})
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("data", {}).get("content", [])
 
-def fetch_unlocks(page_size=5):
-    url = f"{BASE_URL}/tokenUnlocks?pageSize={page_size}"
-    response = requests.get(url, headers=HEADERS)
-    response.raise_for_status()
-    return response.json()
+# ===================== INGEST FUNCTIONS =====================
 
-def run_all():
-    print("🚀 Fetching unlocks...")
-    data = fetch_unlocks(page_size=50)
-    rows = []
-    for u in data.get("data", {}).get("content", []):
-        rows.append({
-            "coin_id": u.get("coinId"),
-            "coin_slug": u.get("coinSlug"),
-            "coin_symbol": u.get("coinSymbol"),
+def ingest_supported_coins():
+    print("📥 Fetching supported coins...")
+    rows = fetch_api("tokenUnlocks/supportedCoins")
+    for r in rows:
+        sb.table("droptabs_supported_coins").upsert({
+            "id": r.get("id"),
+            "slug": r.get("coin", {}).get("slug"),
+            "symbol": r.get("coin", {}).get("symbol"),
+            "last_update": datetime.utcnow().isoformat()
+        }).execute()
+
+def ingest_unlocks():
+    print("📥 Fetching unlocks...")
+    rows = fetch_api("tokenUnlocks")
+    for u in rows:
+        sb.table("droptabs_unlocks").upsert({
+            "id": u.get("id"),
+            "coin_id": u.get("coin", {}).get("id"),
+            "coin_slug": u.get("coin", {}).get("slug"),
+            "coin_symbol": u.get("coin", {}).get("symbol"),
             "price_usd": u.get("priceUsd"),
             "market_cap": u.get("marketCap"),
             "fdv": u.get("fdv"),
-            "circulation_supply_percent": u.get("circulationSupplyPercent"),
-            "unlocked_percent": u.get("totalTokensUnlockedPercent"),
-            "locked_percent": u.get("totalTokensLockedPercent"),
+            "circulation_supply_percent": u.get("circulatingSupplyPercent"),
+            "unlocked_percent": u.get("unlockedPercent"),
+            "locked_percent": u.get("lockedPercent"),
             "tge_date": u.get("tgeDate"),
-            "last_update": u.get("updatedAt")
-        })
-    if rows:
-        supabase.table("droptabs_unlocks").upsert(rows).execute()
-        print(f"✅ Inserted {len(rows)} rows")
-    else:
-        print("⚠️ No rows to insert")
+            "last_update": datetime.utcnow().isoformat()
+        }).execute()
+
+# ===================== MAIN =====================
+
+def run_all():
+    ingest_supported_coins()
+    ingest_unlocks()
 
 if __name__ == "__main__":
     run_all()
-
 
