@@ -87,14 +87,15 @@ def ingest_unlocks():
     rows = []
     for u in data.get("data", []):
         coin = u.get("coin")
-        if isinstance(coin, dict):
+
+        slug, symbol = None, None
+        if isinstance(coin, dict):       # ✅ proper object
             slug = coin.get("slug")
             symbol = coin.get("symbol")
-        elif isinstance(coin, str):
+        elif isinstance(coin, str):      # ✅ plain string
             slug = coin
-            symbol = None
         else:
-            slug, symbol = None, None
+            print(f"⚠️ Unexpected coin format: {coin}")
 
         rows.append({
             "token": slug,
@@ -163,3 +164,4 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
