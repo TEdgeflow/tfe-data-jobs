@@ -1,88 +1,67 @@
 import os
 import requests
-from datetime import datetime, timezone
-from supabase import create_client, Client
+from datetime import datetime
+from supabase import create_client
 
-# ========= ENV VARS =========
+# ---- ENV VARS ----
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DROPTABS_KEY = os.getenv("DROPTABS_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("❌ Missing Supabase credentials")
+sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-if not DROPTABS_KEY:
-    raise RuntimeError("❌ Missing Droptabs API key")
+DROPTABS_BASE = "https://public-api.dropstab.com/api/v1"
 
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-BASE_URL = "https://public-api.dropstab.com/api/v1"
-
-# ========= HELPERS =========
-def iso_now():
-    return datetime.now(timezone.utc).isoformat()
-
-def fetch_api(endpoint, params=None):
-    url = f"{BASE_URL}/{endpoint}"
-    params = params or {}
-    params["api_key"] = DROPTABS_KEY   # ✅ query param
-
+# ---- Helper to fetch API ----
+def fetch_api(endpoint, page=0, page_size=50):
+    url = f"{DROPTABS_BASE}/{endpoint}"
     headers = {
-        "accept": "application/json",
-        "x-dropstab-api-key": DROPTABS_KEY   # ✅ fallback
+        "api_key": DROPTABS_KEY,             # ✅ required
+        "x-dropstab-api-key": DROPTABS_KEY   # ✅ also required
     }
-
-    print(f"🔗 Fetching {url} with params {params}")
-    resp = requests.get(url, params=params, headers=headers)
+    params = {"pageSize": page_size, "page": page}
+    resp = requests.get(url, headers=headers, params=params)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    # ✅ Fix: real rows are under data.content
+    return data.get("data", {}).get("content", [])
 
-def upsert(table, rows):
-    if not rows:
-        print(f"⚠️ No rows to upsert into {table}")
-        return
-    try:
-        sb.table(table).upsert(rows).execute()
-        print(f"⬆️ Upserted {len(rows)} rows into {table}")
-    except Exception as e:
-        print(f"❌ Supabase insert failed for {table}: {e}")
-
-# ========= INGESTION =========
+# ---- Ingest Supported Coins ----
 def ingest_supported_coins():
-    data = fetch_api("tokenUnlocks/supportedCoins", {"pageSize": 50, "page": 0})
-    if not data:
-        return
+    print("📥 Fetching supported coins...")
+    rows = fetch_api("tokenUnlocks/supportedCoins")
+    for c in rows:
+        sb.table("droptabs_supported_coins").upsert({
+            "id": c.get("id"),
+            "slug": c.get("coinSlug") or c.get("slug"),
+            "symbol": c.get("coinSymbol") or c.get("symbol"),
+            "name": c.get("name"),
+            "last_update": datetime.utcnow().isoformat()
+        }).execute()
+    print(f"✅ Inserted {len(rows)} supported coins")
 
-    rows = []
-    for c in data.get("content", []):   # ✅ correct field from JSON
-        rows.append({
-            "slug": c.get("coinSlug"),   # ✅ JSON has coinSlug
-            "symbol": c.get("coinSymbol"),  # ✅ JSON has coinSymbol
-            "name": c.get("coinName") if "coinName" in c else None,
-            "last_update": iso_now()
-        })
-
-    upsert("droptabs_supported_coins", rows)
-
+# ---- Ingest Unlocks ----
 def ingest_unlocks():
-    data = fetch_api("tokenUnlocks", {"pageSize": 50, "page": 0})
-    if not data:
-        return
+    print("📥 Fetching unlocks...")
+    rows = fetch_api("tokenUnlocks")
+    for u in rows:
+        sb.table("droptabs_unlocks").upsert({
+            "id": u.get("id"),
+            "coin_id": u.get("coin", {}).get("id"),
+            "coin_slug": u.get("coin", {}).get("slug"),
+            "coin_symbol": u.get("coin", {}).get("symbol"),
+            "price_usd": u.get("priceUsd"),
+            "market_cap": u.get("marketCap"),
+            "fdv": u.get("fdv"),
+            "circulation_supply_percent": u.get("circulationSupplyPercent"),
+            "unlocked_percent": u.get("unlockedPercent"),
+            "locked_percent": u.get("lockedPercent"),
+            "tge_date": u.get("tgeDate"),
+            "last_update": datetime.utcnow().isoformat()
+        }).execute()
+    print(f"✅ Inserted {len(rows)} unlocks")
 
-    rows = []
-    for u in data.get("content", []):   # ✅ JSON has "content" not "data"
-        rows.append({
-            "coin_id": u.get("coinId"),
-            "coin_slug": u.get("coinSlug"),
-            "coin_symbol": u.get("coinSymbol"),
-            "unlock_date": u.get("tgeDate"),
-            "category": u.get("category"),
-            "last_update": iso_now()
-        })
-
-    upsert("droptabs_unlocks", rows)
-
-# ========= MAIN =========
+# ---- Run All ----
 def run_all():
     print("🚀 Starting Droptabs ingestion...")
     ingest_supported_coins()
@@ -91,7 +70,3 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
-
-
-
-
