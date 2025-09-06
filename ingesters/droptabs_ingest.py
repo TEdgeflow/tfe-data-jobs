@@ -23,14 +23,13 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_api(endpoint, params=None):
-    """Fetch JSON from Dropstab API with api_key (query + header)."""
     url = f"{BASE_URL}/{endpoint}"
     params = params or {}
     params["api_key"] = DROPTABS_KEY   # ✅ query param
 
     headers = {
         "accept": "application/json",
-        "x-dropstab-api-key": DROPTABS_KEY   # ✅ header fallback
+        "x-dropstab-api-key": DROPTABS_KEY   # ✅ fallback
     }
 
     print(f"🔗 Fetching {url} with params {params}")
@@ -55,21 +54,13 @@ def ingest_supported_coins():
         return
 
     rows = []
-    for c in data.get("data", []):
-        if isinstance(c, dict):
-            rows.append({
-                "slug": c.get("slug"),
-                "symbol": c.get("symbol"),
-                "name": c.get("name"),
-                "last_update": iso_now()
-            })
-        elif isinstance(c, str):
-            rows.append({
-                "slug": c,
-                "symbol": None,
-                "name": None,
-                "last_update": iso_now()
-            })
+    for c in data.get("content", []):   # ✅ correct field from JSON
+        rows.append({
+            "slug": c.get("coinSlug"),   # ✅ JSON has coinSlug
+            "symbol": c.get("coinSymbol"),  # ✅ JSON has coinSymbol
+            "name": c.get("coinName") if "coinName" in c else None,
+            "last_update": iso_now()
+        })
 
     upsert("droptabs_supported_coins", rows)
 
@@ -79,14 +70,12 @@ def ingest_unlocks():
         return
 
     rows = []
-    for u in data.get("data", []):
-        coin = u.get("coin", {}) if isinstance(u.get("coin"), dict) else {}
+    for u in data.get("content", []):   # ✅ JSON has "content" not "data"
         rows.append({
             "coin_id": u.get("coinId"),
-            "coin_slug": coin.get("slug"),
-            "coin_symbol": coin.get("symbol"),
-            "unlock_date": u.get("date"),
-            "amount": u.get("amount"),
+            "coin_slug": u.get("coinSlug"),
+            "coin_symbol": u.get("coinSymbol"),
+            "unlock_date": u.get("tgeDate"),
             "category": u.get("category"),
             "last_update": iso_now()
         })
