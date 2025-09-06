@@ -23,12 +23,18 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_api(endpoint, params=None):
-    """Fetch JSON from Dropstab API with api_key as query param."""
+    """Fetch JSON from Dropstab API with api_key (query + header)."""
     url = f"{BASE_URL}/{endpoint}"
     params = params or {}
-    params["api_key"] = DROPTABS_KEY
+    params["api_key"] = DROPTABS_KEY   # ✅ query param
+
+    headers = {
+        "accept": "application/json",
+        "x-dropstab-api-key": DROPTABS_KEY   # ✅ header fallback
+    }
+
     print(f"🔗 Fetching {url} with params {params}")
-    resp = requests.get(url, params=params)
+    resp = requests.get(url, params=params, headers=headers)
     resp.raise_for_status()
     return resp.json()
 
@@ -57,7 +63,7 @@ def ingest_supported_coins():
                 "name": c.get("name"),
                 "last_update": iso_now()
             })
-        elif isinstance(c, str):  # fallback if API returns just a string
+        elif isinstance(c, str):
             rows.append({
                 "slug": c,
                 "symbol": None,
