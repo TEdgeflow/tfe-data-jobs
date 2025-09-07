@@ -1,62 +1,69 @@
 import os
-import time
 import requests
 from datetime import datetime, timezone
 from supabase import create_client, Client
 
+# ========= ENV VARS (Railway) =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 NANSEN_API_KEY = os.getenv("NANSEN_API_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY or not NANSEN_API_KEY:
-    raise RuntimeError("Missing one of SUPABASE_URL, SUPABASE_KEY, or NANSEN_API_KEY")
-
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-NANSEN_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
+HEADERS = {"Accept": "application/json", "X-API-KEY": NANSEN_API_KEY}
 
-def fetch_whale_flows():
-    headers = {"apiKey": NANSEN_API_KEY, "Content-Type": "application/json"}
-    body = {
-        "parameters": {
-            "smFilter": ["180D Smart Trader", "Fund", "Smart Trader"],
-            "chains": ["ethereum", "solana"],
-            "includeStablecoin": True,
-            "includeNativeTokens": True
-        }
-    }
-    resp = requests.post(NANSEN_URL, headers=headers, json=body)
-    print("[debug] status", resp.status_code, resp.text[:300])
+# ========= Endpoints =========
+INFLOWS_URL = "https://api.nansen.ai/api/beta/smart-money/inflows"
+OUTFLOWS_URL = "https://api.nansen.ai/api/beta/smart-money/outflows"
+
+def fetch_nansen_data(url):
+    resp = requests.get(url, headers=HEADERS)
     resp.raise_for_status()
     return resp.json()
 
-def upsert_whale_flows(data):
-    rows = []
-    # Nansen returns a list directly, not { "data": [...] }
-    for d in data:  
-        rows.append({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "token": d.get("symbol"),
-            "chain": d.get("chain"),
-            "inflow_usd": d.get("volume24hUSD"),   # using 24h as inflow proxy
-            "outflow_usd": None,                   # Nansen doesn’t provide directly
-            "netflow_usd": None,                   # could be computed if available
-            "sm_category": ",".join(d.get("sectors", [])) if d.get("sectors") else None
-        })
-    if rows:
-        sb.table("nansen_whaleflows").upsert(rows).execute()
-        print(f"[upsert] {len(rows)} whale flow rows")
+def ingest_whale_flows():
+    inflows_data = fetch_nansen_data(INFLOWS_URL)
+    outflows_data = fetch_nansen_data(OUTFLOWS_URL)
 
-def main():
-    while True:
-        try:
-            data = fetch_whale_flows()
-            upsert_whale_flows(data)
-            print("Done whale flows.")
-        except Exception as e:
-            print("Error whale flows job:", e)
-        time.sleep(3600)
+    inflow_map = {}
+    for item in inflows_data.get("items", []):
+        token = item.get("symbol")
+        chain = item.get("chain")
+        inflow_usd = item.get("amount_usd", 0)
+        inflow_map[(token, chain)] = inflow_usd
+
+    outflow_map = {}
+    for item in outflows_data.get("items", []):
+        token = item.get("symbol")
+        chain = item.get("chain")
+        outflow_usd = item.get("amount_usd", 0)
+        outflow_map[(token, chain)] = outflow_usd
+
+    rows = []
+    ts = datetime.now(timezone.utc).isoformat()
+
+    all_tokens = set(inflow_map.keys()) | set(outflow_map.keys())
+    for token, chain in all_tokens:
+        inflow = inflow_map.get((token, chain), 0)
+        outflow = outflow_map.get((token, chain), 0)
+        netflow = inflow - outflow
+
+        row = {
+            "ts": ts,
+            "token": token,
+            "chain": chain,
+            "inflow_usd": inflow,
+            "outflow_usd": outflow,
+            "netflow_usd": netflow,
+            "sm_category": None,  # placeholder, can map later if needed
+        }
+        rows.append(row)
+
+    if rows:
+        sb.table("nansen_whaleflows").insert(rows).execute()
+        print(f"Inserted {len(rows)} rows into nansen_whaleflows")
 
 if __name__ == "__main__":
-    main()
+    ingest_whale_flows()
+
 
