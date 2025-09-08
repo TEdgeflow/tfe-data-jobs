@@ -29,51 +29,37 @@ def fetch_json(url, params=None):
     r.raise_for_status()
     return r.json()
 
-# ========= Get Supported Symbols =========
-def get_supported_symbols():
-    url = f"{BASE_URL}/symbols"
-    data = fetch_json(url)
-    return [d.get("symbol") for d in data.get("data", []) if d.get("symbol")]
-
 # ========= Ingest OI =========
-def ingest_open_interest(symbols):
+def ingest_open_interest():
     url = f"{BASE_URL}/openInterest"
-    rows = []
+    data = fetch_json(url)
 
-    for sym in symbols:
-        try:
-            data = fetch_json(url, params={"symbol": sym})
-            for d in data.get("data", []):
-                rows.append({
-                    "symbol": d.get("symbol"),
-                    "exchange": d.get("exchangeName"),
-                    "oi": d.get("openInterestUsd"),
-                    "timestamp": iso_now()
-                })
-        except Exception as e:
-            print(f"[OI error] {sym}:", e)
+    rows = []
+    for d in data.get("data", []):
+        rows.append({
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "oi": d.get("openInterestUsd"),
+            "timestamp": iso_now()
+        })
 
     if rows:
         sb.table("derivatives_oi").upsert(rows).execute()
         print(f"[CoinGlass OI] Upserted {len(rows)} rows")
 
 # ========= Ingest Funding =========
-def ingest_funding(symbols):
+def ingest_funding():
     url = f"{BASE_URL}/fundingRate"
-    rows = []
+    data = fetch_json(url)
 
-    for sym in symbols:
-        try:
-            data = fetch_json(url, params={"symbol": sym})
-            for d in data.get("data", []):
-                rows.append({
-                    "symbol": d.get("symbol"),
-                    "exchange": d.get("exchangeName"),
-                    "funding_rate": d.get("fundingRate"),
-                    "timestamp": iso_now()
-                })
-        except Exception as e:
-            print(f"[FR error] {sym}:", e)
+    rows = []
+    for d in data.get("data", []):
+        rows.append({
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "funding_rate": d.get("fundingRate"),
+            "timestamp": iso_now()
+        })
 
     if rows:
         sb.table("derivatives_funding").upsert(rows).execute()
@@ -83,13 +69,10 @@ def ingest_funding(symbols):
 if __name__ == "__main__":
     while True:
         try:
-            symbols = get_supported_symbols()
-            print(f"[Symbols] Fetched {len(symbols)} supported symbols")
-
-            ingest_open_interest(symbols)
-            ingest_funding(symbols)
-
+            ingest_open_interest()
+            ingest_funding()
         except Exception as e:
             print("[error]", e)
-        time.sleep(600)  # every 10 min
+        time.sleep(600)  # every 10 min to stay safe on free tier
+
 
