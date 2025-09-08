@@ -17,12 +17,13 @@ if not COINGLASS_KEY:
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 HEADERS = {"coinglassSecret": COINGLASS_KEY}
-BASE_URL = "https://open-api.coinglass.com/api/futures"
+BASE_URL = "https://open-api.coinglass.com"
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
-def fetch_json(url, params=None):
+def fetch_json(endpoint, params=None):
+    url = f"{BASE_URL}{endpoint}"
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code == 403:
         raise RuntimeError("403 Forbidden – check CoinGlass plan or key permissions.")
@@ -31,8 +32,7 @@ def fetch_json(url, params=None):
 
 # ========= Ingest OI =========
 def ingest_open_interest():
-    url = f"{BASE_URL}/openInterest"
-    data = fetch_json(url)
+    data = fetch_json("/api/futures/openInterest/exchange-list")
 
     rows = []
     for d in data.get("data", []):
@@ -49,8 +49,7 @@ def ingest_open_interest():
 
 # ========= Ingest Funding =========
 def ingest_funding():
-    url = f"{BASE_URL}/fundingRate"
-    data = fetch_json(url)
+    data = fetch_json("/api/futures/fundingRate/exchange-list")
 
     rows = []
     for d in data.get("data", []):
@@ -73,6 +72,7 @@ if __name__ == "__main__":
             ingest_funding()
         except Exception as e:
             print("[error]", e)
-        time.sleep(600)  # every 10 min to stay safe on free tier
+        time.sleep(600)  # every 10 min
+
 
 
