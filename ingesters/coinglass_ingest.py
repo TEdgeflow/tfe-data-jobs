@@ -15,54 +15,68 @@ HEADERS = {"accept": "application/json", "coinglassSecret": COINGLASS_API_KEY}
 
 
 def fetch(endpoint, params=None):
-    r = requests.get(f"{BASE_URL}/{endpoint}", headers=HEADERS, params=params or {})
+    """Helper for GET requests to CoinGlass"""
+    url = f"{BASE_URL}/{endpoint}"
+    r = requests.get(url, headers=HEADERS, params=params or {})
     r.raise_for_status()
     return r.json()
 
 
 def ingest_all():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).isoformat()
 
-    # --- Pick your symbols manually for now (since Hobbyist can't list all) ---
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # extend manually if needed
+    # === Get symbols from Supabase ===
+    symbols = [row["symbol"] for row in sb.table("supported_symbols").select("symbol").execute().data]
+    if not symbols:
+        print("No symbols found in supported_symbols table.")
+        return
 
     funding_rows, oi_rows, liq_rows, lq_rows = [], [], [], []
 
     for sym in symbols:
         try:
-            # --- Funding Rate (by exchange list, take "All") ---
-            fr_data = fetch("futures/fundingRate/exchange-list", {"symbol": sym})
-            for row in fr_data.get("data", []):
-                if row.get("exchangeName") == "All":
-                    funding_rows.append({
-                        "symbol": sym,
-                        "funding_rate": row.get("fundingRate"),
-                        "timestamp": now.isoformat()
-                    })
+            # --- Funding Rate (exchange-list, take "All") ---
+            try:
+                fr_data = fetch("futures/fundingRate/exchange-list", {"symbol": sym})
+                for row in fr_data.get("data", []):
+                    if row.get("exchangeName") == "All":
+                        funding_rows.append({
+                            "symbol": sym,
+                            "funding_rate": row.get("fundingRate"),
+                            "timestamp": now
+                        })
+            except Exception as e:
+                print(f"[WARN] Funding fetch failed for {sym}: {e}")
 
-            # --- Open Interest (by exchange list, take "All") ---
-            oi_data = fetch("futures/open-interest/exchange-list", {"symbol": sym})
-            for row in oi_data.get("data", []):
-                if row.get("exchangeName") == "All":
-                    oi_rows.append({
-                        "symbol": sym,
-                        "oi": row.get("openInterest"),
-                        "timestamp": now.isoformat()
-                    })
+            # --- Open Interest (exchange-list, take "All") ---
+            try:
+                oi_data = fetch("futures/open-interest/exchange-list", {"symbol": sym})
+                for row in oi_data.get("data", []):
+                    if row.get("exchangeName") == "All":
+                        oi_rows.append({
+                            "symbol": sym,
+                            "oi": row.get("openInterest"),
+                            "timestamp": now
+                        })
+            except Exception as e:
+                print(f"[WARN] OI fetch failed for {sym}: {e}")
 
             # --- Liquidations ---
-            liq_data = fetch("futures/liquidation", {"symbol": sym})
-            for l in liq_data.get("data", []):
-                liq_rows.append({
-                    "symbol": sym,
-                    "side": l.get("side"),
-                    "amount": l.get("amount"),
-                    "price": l.get("price"),
-                    "time_interval": l.get("interval"),
-                    "ts": now.isoformat()
-                })
+            try:
+                liq_data = fetch("futures/liquidation", {"symbol": sym})
+                for l in liq_data.get("data", []):
+                    liq_rows.append({
+                        "symbol": sym,
+                        "side": l.get("side"),
+                        "amount": l.get("amount"),
+                        "price": l.get("price"),
+                        "time_interval": l.get("interval"),
+                        "ts": now
+                    })
+            except Exception as e:
+                print(f"[WARN] Liquidation fetch failed for {sym}: {e}")
 
-            # --- Liquidity Levels (may return null if tier unsupported) ---
+            # --- Liquidity Levels (may not be supported in Hobbyist) ---
             try:
                 lq_data = fetch("futures/liquidity", {"symbol": sym})
                 for d in lq_data.get("data", []):
@@ -70,13 +84,13 @@ def ingest_all():
                         "symbol": sym,
                         "bid_liquidity": d.get("bidLiquidity"),
                         "ask_liquidity": d.get("askLiquidity"),
-                        "ts": now.isoformat()
+                        "ts": now
                     })
             except Exception:
-                print(f"[INFO] Liquidity not supported for {sym}, skipping.")
+                print(f"[INFO] Liquidity not available for {sym}, skipping.")
 
         except Exception as e:
-            print(f"[WARN] Failed for {sym}: {e}")
+            print(f"[ERROR] Fatal error for {sym}: {e}")
 
     # === Insert into Supabase ===
     if funding_rows:
@@ -98,8 +112,3 @@ def ingest_all():
 
 if __name__ == "__main__":
     ingest_all()
-
-
-
-
-
