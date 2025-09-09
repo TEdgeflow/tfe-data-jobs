@@ -8,7 +8,11 @@ from supabase import create_client, Client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 COINGLASS_API_KEY = os.getenv("COINGLASS_API_KEY")
-
+print("DEBUG ENV:", {
+    "SUPABASE_URL": SUPABASE_URL,
+    "SUPABASE_KEY": SUPABASE_KEY,
+    "COINGLASS_API_KEY": COINGLASS_API_KEY
+})
 if not SUPABASE_URL or not SUPABASE_KEY or not COINGLASS_API_KEY:
     raise RuntimeError("Missing SUPABASE_URL, SUPABASE_KEY, or COINGLASS_API_KEY")
 
