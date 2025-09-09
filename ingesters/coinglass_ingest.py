@@ -22,8 +22,11 @@ HEADERS = {
 }
 BASE_URL = "https://open-api-v4.coinglass.com/api"
 
+
 # ========= HELPERS =========
-def iso_now():
+def iso_now(ts_ms=None):
+    if ts_ms:
+        return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat()
     return datetime.now(timezone.utc).isoformat()
 
 def fetch_json(path, params=None):
@@ -31,70 +34,89 @@ def fetch_json(path, params=None):
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code == 403:
         raise RuntimeError("403 Forbidden – check CoinGlass plan or key permissions.")
-    if r.status_code == 404:
-        raise RuntimeError(f"404 Not Found – invalid endpoint {url}")
     r.raise_for_status()
     return r.json()
 
-# ========= INGEST FUNCTIONS =========
 
-# --- Open Interest ---
+# ========= INGEST FUNCTIONS =========
 def ingest_open_interest():
-    data = fetch_json("/futures/openInterest/ohlc-history", {"interval": "1h"})
+    data = fetch_json("/futures/openInterest/ohlc-history", {
+        "symbol": "BTC",   # ⚡ later: loop over BTC, ETH, SOL etc
+        "interval": "1h"
+    })
+
     rows = []
     for d in data.get("data", []):
         rows.append({
-            "symbol": d.get("symbol"),
+            "symbol": "BTC",
             "oi": d.get("openInterestUsd"),
-            "timestamp": datetime.fromtimestamp(d.get("time")/1000, tz=timezone.utc).isoformat()
+            "timestamp": iso_now(d.get("time"))
         })
+
     if rows:
         sb.table("derivatives_oi").upsert(rows).execute()
-        print(f"[CoinGlass OI] Upserted {len(rows)} rows")
+        print(f"[OI] Upserted {len(rows)} rows")
 
-# --- Funding Rate ---
+
 def ingest_funding():
-    data = fetch_json("/futures/fundingRate/ohlc-history", {"interval": "1h"})
+    data = fetch_json("/futures/fundingRate/ohlc-history", {
+        "symbol": "BTC",
+        "interval": "1h"
+    })
+
     rows = []
     for d in data.get("data", []):
         rows.append({
-            "symbol": d.get("symbol"),
+            "symbol": "BTC",
             "funding_rate": d.get("fundingRate"),
-            "timestamp": datetime.fromtimestamp(d.get("time")/1000, tz=timezone.utc).isoformat()
+            "timestamp": iso_now(d.get("time"))
         })
+
     if rows:
         sb.table("derivatives_funding").upsert(rows).execute()
-        print(f"[CoinGlass Funding] Upserted {len(rows)} rows")
+        print(f"[Funding] Upserted {len(rows)} rows")
 
-# --- Liquidations ---
+
 def ingest_liquidations():
-    data = fetch_json("/futures/liquidation/history", {"interval": "1h"})
+    data = fetch_json("/futures/liquidation/history", {
+        "symbol": "BTC",
+        "interval": "1h"
+    })
+
     rows = []
     for d in data.get("data", []):
         rows.append({
-            "symbol": d.get("symbol"),
-            "side": d.get("side"),  # Long or Short
-            "liquidation_usd": d.get("value"),
-            "timestamp": datetime.fromtimestamp(d.get("time")/1000, tz=timezone.utc).isoformat()
+            "symbol": "BTC",
+            "side": d.get("side"),
+            "amount": d.get("amount"),
+            "price": d.get("price"),
+            "timestamp": iso_now(d.get("time"))
         })
+
     if rows:
         sb.table("derivatives_liquidations").upsert(rows).execute()
-        print(f"[CoinGlass Liquidations] Upserted {len(rows)} rows")
+        print(f"[Liquidations] Upserted {len(rows)} rows")
 
-# --- Taker Buy/Sell ---
+
 def ingest_taker_volume():
-    data = fetch_json("/futures/taker-buy-sell-volume/history", {"interval": "1h"})
+    data = fetch_json("/futures/taker-buy-sell-volume/history", {
+        "symbol": "BTC",
+        "interval": "1h"
+    })
+
     rows = []
     for d in data.get("data", []):
         rows.append({
-            "symbol": d.get("symbol"),
-            "buy_volume": d.get("buyVolUsd"),
-            "sell_volume": d.get("sellVolUsd"),
-            "timestamp": datetime.fromtimestamp(d.get("time")/1000, tz=timezone.utc).isoformat()
+            "symbol": "BTC",
+            "buy_volume": d.get("buyVol"),
+            "sell_volume": d.get("sellVol"),
+            "timestamp": iso_now(d.get("time"))
         })
+
     if rows:
         sb.table("derivatives_taker_volume").upsert(rows).execute()
-        print(f"[CoinGlass Taker Volume] Upserted {len(rows)} rows")
+        print(f"[Taker Volume] Upserted {len(rows)} rows")
+
 
 # ========= MAIN LOOP =========
 if __name__ == "__main__":
@@ -106,7 +128,8 @@ if __name__ == "__main__":
             ingest_taker_volume()
         except Exception as e:
             print("[error]", e)
-        time.sleep(300)  # every 5 minutes
+        time.sleep(300)  # every 5 min
+
 
 
 
