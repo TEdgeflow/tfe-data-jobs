@@ -26,9 +26,9 @@ def ingest_all():
     now = datetime.now(timezone.utc).isoformat()
 
     # === Get symbols from Supabase ===
-    symbols = [row["symbol"] for row in sb.table("supported_symbols").select("symbol").execute().data]
+    symbols = [row["symbol"] for row in sb.table("coinglass_supported_symbols").select("symbol").execute().data]
     if not symbols:
-        print("No symbols found in supported_symbols table.")
+        print("No symbols found in coinglass_supported_symbols table.")
         return
 
     funding_rows, oi_rows, liq_rows, lq_rows = [], [], [], []
@@ -112,3 +112,6 @@ def ingest_all():
 
 if __name__ == "__main__":
     ingest_all()
+
+
+
