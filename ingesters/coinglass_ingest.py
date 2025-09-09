@@ -42,14 +42,10 @@ def ingest_open_interest():
 
     rows = []
     for d in data.get("data", []):
-        symbol = d.get("symbol")
-        exchange = d.get("exchangeName")
-        oi = d.get("openInterestUsd")
-
         rows.append({
-            "symbol": symbol,
-            "exchange": exchange,
-            "oi": oi,
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "oi": d.get("openInterestUsd"),
             "timestamp": iso_now()
         })
 
@@ -64,14 +60,10 @@ def ingest_funding():
 
     rows = []
     for d in data.get("data", []):
-        symbol = d.get("symbol")
-        exchange = d.get("exchangeName")
-        fr = d.get("fundingRate")
-
         rows.append({
-            "symbol": symbol,
-            "exchange": exchange,
-            "funding_rate": fr,
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "funding_rate": d.get("fundingRate"),
             "timestamp": iso_now()
         })
 
@@ -79,15 +71,56 @@ def ingest_funding():
         sb.table("derivatives_funding").upsert(rows).execute()
         print(f"[CoinGlass Funding] Upserted {len(rows)} rows")
 
+# ========= INGEST LIQUIDATIONS =========
+def ingest_liquidations():
+    url = f"{BASE_URL}/liquidation/history"
+    data = fetch_json(url)
+
+    rows = []
+    for d in data.get("data", []):
+        rows.append({
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "side": d.get("side"),  # long/short
+            "liquidation_usd": d.get("amountUsd"),
+            "timestamp": iso_now()
+        })
+
+    if rows:
+        sb.table("derivatives_liquidations").upsert(rows).execute()
+        print(f"[CoinGlass Liquidations] Upserted {len(rows)} rows")
+
+# ========= INGEST TAKER BUY/SELL =========
+def ingest_taker_volume():
+    url = f"{BASE_URL}/taker-buy-sell-volume/exchange-list"
+    data = fetch_json(url)
+
+    rows = []
+    for d in data.get("data", []):
+        rows.append({
+            "symbol": d.get("symbol"),
+            "exchange": d.get("exchangeName"),
+            "buy_volume": d.get("buyVolUsd"),
+            "sell_volume": d.get("sellVolUsd"),
+            "timestamp": iso_now()
+        })
+
+    if rows:
+        sb.table("derivatives_taker_volume").upsert(rows).execute()
+        print(f"[CoinGlass Taker Volume] Upserted {len(rows)} rows")
+
 # ========= MAIN LOOP =========
 if __name__ == "__main__":
     while True:
         try:
             ingest_open_interest()
             ingest_funding()
+            ingest_liquidations()
+            ingest_taker_volume()
         except Exception as e:
             print("[error]", e)
         time.sleep(300)  # every 5 minutes
+
 
 
 
