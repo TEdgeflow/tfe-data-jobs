@@ -22,7 +22,7 @@ droptabs_investors: python ingesters/droptabs_investors_ingest.py
 droptabs_funding: python ingesters/droptabs_funding_ingest.py
 worker: python ingesters/droptabs_ingest.py
 droptabs-investors-funding: python ingesters/droptabs_investors_funding_ingest.py
-
+ai: python ai_signal_job.py
 
 
 
