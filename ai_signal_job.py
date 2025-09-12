@@ -36,6 +36,9 @@ def run_ai_signals():
                 messages=[{"role": "user", "content": prompt}]
             )
 
+            # Confirm which model is used
+            print(f"[ai_signals] Model used: {response.model}")
+
             content = response.choices[0].message.content
             print(f"[ai_signals] Raw AI response: {content}")
 
@@ -62,4 +65,5 @@ if __name__ == "__main__":
     print("[ai_signals] Job started")
     run_ai_signals()
     print("[ai_signals] Job finished")
+
 
