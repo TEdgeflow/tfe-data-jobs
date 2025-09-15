@@ -1,53 +1,67 @@
 import os
-import sys
+import re
 from supabase import create_client
-from datetime import datetime
+from openai import OpenAI
+from datetime import datetime, timedelta
 
-# ========= ENV VARS =========
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# === Supabase setup ===
+sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("[error] Missing Supabase credentials")
-    sys.exit(1)
+# === OpenAI setup ===
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+LOOKBACK_HR = int(os.getenv("SIGNAL_LOOKBACK_HR", "6"))
 
-# ========= SIGNAL VIEWS =========
-SIGNAL_VIEWS = [
-    "v_signal_funding_squeeze",   # Funding + OI + Volume + MC (short-term)
-    # "v_signal_unlock_risk",      # <- add once created
-    # "v_signal_liquidity_trap",   # <- add once created
-    # "v_signal_liquidation_cluster" # <- add once created
-]
+def run_ai_signals():
+    # 1. Fetch recent signals from funding squeeze view
+    since = (datetime.utcnow() - timedelta(hours=LOOKBACK_HR)).isoformat()
+    signals = sb.table("v_signal_funding_squeeze").select("*").gte("created_at", since).execute().data
 
-def fetch_and_log_signals():
-    for view in SIGNAL_VIEWS:
-        print(f"[boot] Fetching signals from {view}...")
+    print(f"[ai_signals_funding] Found {len(signals)} funding signals since {since}")
 
-        query = f"""
-            select signal_id, symbol, signal_type, signal_category,
-                   confidence_score, signal_strength, rationale, created_at
-            from {view}
-            where created_at > now() - interval '1 hour';
+    for sig in signals:
+        prompt = f"""
+        Token: {sig['symbol']}
+        Signal type: {sig['signal_type']}
+        SQL Confidence: {sig['confidence_score']}
+        SQL Signal Strength: {sig['signal_strength']}
+        SQL Rationale: {sig['rationale']}
+
+        Please output:
+        - Adjusted confidence score (0-100)
+        - Improved one-sentence rationale
         """
 
         try:
-            result = sb.rpc("exec_sql", {"query": query}).execute()
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            content = response.choices[0].message.content
+            print(f"[ai_signals_funding] AI raw response: {content}")
+
+            # Extract confidence score
+            match = re.search(r"(\d{1,3})", content)
+            confidence = int(match.group(1)) if match else int(sig["confidence_score"] * 100)
+            rationale = content.strip()
+
+            # Insert into ai_signals
+            sb.table("ai_signals").insert({
+                "token_symbol": sig['symbol'],
+                "signal_type": sig['signal_type'],
+                "confidence_score": confidence,
+                "rationale": rationale,
+                "created_at": sig['created_at']
+            }).execute()
+
+            print(f"[ai_signals_funding] Inserted {sig['symbol']} with confidence {confidence}")
+
         except Exception as e:
-            print(f"[error] Failed fetching from {view}: {e}")
-            continue
-
-        if not result.data:
-            print(f"[info] No new signals from {view}")
-            continue
-
-        for row in result.data:
-            try:
-                sb.table("ai_signals").insert(row).execute()
-                print(f"[ok] Inserted {row['signal_type']} for {row['symbol']}")
-            except Exception as e:
-                print(f"[skip] Could not insert {row}: {e}")
+            print(f"[ai_signals_funding] Error for {sig.get('symbol')}: {e}")
 
 if __name__ == "__main__":
-    fetch_and_log_signals()
+    print("[ai_signals_funding] Job started")
+    run_ai_signals()
+    print("[ai_signals_funding] Job finished")
+
