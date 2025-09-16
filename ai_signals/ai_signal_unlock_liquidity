@@ -11,31 +11,33 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 
+
 def fetch_signals():
     """Fetch fresh rows from v_signal_unlock_liquidity_whales"""
     query = sb.table("v_signal_unlock_liquidity_whales").select("*").execute()
     return query.data
 
+
 def ai_enrich(signal):
     """Send signal context to OpenAI for short reasoning confirmation"""
     prompt = f"""
-    Token: {signal['coin_symbol']}
-    Trade Signal: {signal['final_trade_signal']}
-    Buy Signal %: {signal['buy_signal_percent']}
-    Risk Signal %: {signal['risk_signal_percent']}
-    Confidence Score: {signal['confidence_score']}
-    Rationale: {signal['rationale']}
+    Token: {signal['token_symbol']}
+    Trade Signal: {signal.get('final_trade_signal', 'N/A')}
+    Buy Signal %: {signal.get('buy_signal_percent', 'N/A')}
+    Risk Signal %: {signal.get('risk_signal_percent', 'N/A')}
+    Confidence Score: {signal.get('confidence_score', 'N/A')}
+    Rationale: {signal.get('rationale', '')}
 
     Use the following sources for confirmation:
-    - Dropstab Unlock Data (internal): {signal['droptab_url']}
-    - Coinglass Heatmap (internal): {signal['coinglass_url']}
-    - Coingecko Market Data (internal): {signal['coingecko_url']}
+    - Dropstab Unlock Data (internal): {signal.get('droptab_url', '')}
+    - Coinglass Heatmap (internal): {signal.get('coinglass_url', '')}
+    - Coingecko Market Data (internal): {signal.get('coingecko_url', '')}
 
     Write a concise 2–3 sentence trading insight.
     Do NOT include raw URLs — instead mention them as “Dropstab” or “Coinglass” to support reasoning.
     """
 
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a professional crypto trading analyst."},
@@ -44,25 +46,27 @@ def ai_enrich(signal):
         max_tokens=200
     )
 
-    return response["choices"][0]["message"]["content"].strip()
+    return response.choices[0].message.content.strip()
+
 
 def store_ai_signal(signal, ai_summary):
     """Insert enriched AI signal into ai_signals table"""
     row = {
         "id": signal["signal_id"],
-        "coin_symbol": signal["coin_symbol"],
-        "final_trade_signal": signal["final_trade_signal"],
-        "buy_signal_percent": signal["buy_signal_percent"],
-        "risk_signal_percent": signal["risk_signal_percent"],
-        "confidence_score": signal["confidence_score"],
-        "rationale": signal["rationale"],
+        "token_symbol": signal["token_symbol"],
+        "final_trade_signal": signal.get("final_trade_signal"),
+        "buy_signal_percent": signal.get("buy_signal_percent"),
+        "risk_signal_percent": signal.get("risk_signal_percent"),
+        "confidence_score": signal.get("confidence_score"),
+        "rationale": signal.get("rationale"),
         "ai_summary": ai_summary,
-        "droptab_url": signal["droptab_url"],
-        "coinglass_url": signal["coinglass_url"],
-        "coingecko_url": signal["coingecko_url"],
+        "droptab_url": signal.get("droptab_url"),
+        "coinglass_url": signal.get("coinglass_url"),
+        "coingecko_url": signal.get("coingecko_url"),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     sb.table("ai_signals").upsert(row).execute()
+
 
 def run_job():
     signals = fetch_signals()
@@ -70,9 +74,11 @@ def run_job():
         try:
             ai_summary = ai_enrich(sig)
             store_ai_signal(sig, ai_summary)
-            print(f"✅ Stored AI signal for {sig['coin_symbol']}")
+            print(f"✅ Stored AI signal for {sig['token_symbol']}")
         except Exception as e:
-            print(f"❌ Error with {sig['coin_symbol']}: {e}")
+            print(f"❌ Error with {sig.get('token_symbol', 'UNKNOWN')}: {e}")
+
 
 if __name__ == "__main__":
     run_job()
+
