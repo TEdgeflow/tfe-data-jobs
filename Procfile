@@ -24,7 +24,8 @@ worker: python ingesters/droptabs_ingest.py
 droptabs-investors-funding: python ingesters/droptabs_investors_funding_ingest.py
 ai_signals: python ai_signal_job.py
 ai-signals-funding: python ai_signals/ai_signals_funding.py
-ai_signal_unlock_liquidity: python ai_signals/ai_signal_unlock_liquidity.py
+unlock_ai: python ai_signals/ai_signal_unlock_liquidity.py
+
 
 
 
