@@ -68,6 +68,7 @@ def store_ai_signal(signal, ai_json):
         "confidence_score": parsed.get("confidence_score", 50),
         "signal_strength": parsed.get("signal_strength", "Medium"),
         "rationale": parsed.get("rationale", ""),
+        "final_trade_signal": parsed.get("final_trade_signal", "NEUTRAL"),  # ✅ add this back
         "droptab_url": signal.get("droptab_url"),
         "coinglass_url": signal.get("coinglass_url"),
         "coingecko_url": signal.get("coingecko_url"),
