@@ -35,7 +35,7 @@ def ai_enrich(signal):
     {{
       "confidence_score": (0-100 number),
       "signal_strength": "High/Medium/Low",
-      "rationale": "one-sentence rationale"
+      "rationale": "one-sentence rationale",
       "final_trade_signal": "BUY/SELL/NEUTRAL"
     }}
     """
@@ -60,7 +60,7 @@ def store_ai_signal(signal, ai_json):
             "confidence_score": 50,
             "signal_strength": "Medium",
             "rationale": ai_json,
-            "final_trade_signal": "NEUTRAL",   # ✅ fixed comma
+            "final_trade_signal": "NEUTRAL",
         }
 
     row = {
@@ -79,8 +79,11 @@ def store_ai_signal(signal, ai_json):
 
     print(f"⬆️ Upserting row into ai_signals: {row}")
 
-    sb.table("ai_signals").upsert(row).execute()
-    print(f"✅ Stored AI signal for {signal['coin_symbol']}")
+    try:
+        sb.table("ai_signals").upsert(row).execute()
+        print(f"✅ Stored AI signal for {signal['coin_symbol']}")
+    except Exception as e:
+        print(f"❌ Supabase insert failed for {signal['coin_symbol']}: {e}")
 
 # ========= RUN =========
 def run_job():
@@ -89,11 +92,11 @@ def run_job():
         try:
             ai_json = ai_enrich(sig)
             store_ai_signal(sig, ai_json)
-            print(f"✅ Stored AI signal for {sig['coin_symbol']}")
         except Exception as e:
             print(f"❌ Error with {sig.get('coin_symbol', 'UNKNOWN')}: {e}")
 
 if __name__ == "__main__":
     run_job()
+
 
 
