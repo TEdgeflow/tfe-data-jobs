@@ -58,7 +58,7 @@ def store_ai_signal(signal, ai_json):
             "confidence_score": 50,
             "signal_strength": "Medium",
             "rationale": ai_json
-            "final_trade_signal": "NEUTRAL"
+            "final_trade_signal": "NEUTRAL",
         }
 
     row = {
