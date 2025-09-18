@@ -53,12 +53,14 @@ def store_ai_signal(signal, ai_json):
     """Insert enriched signal into ai_signals table"""
     try:
         parsed = json.loads(ai_json)
-    except Exception:
+        print(f"✅ Parsed AI JSON for {signal['coin_symbol']}: {parsed}")
+    except Exception as e:
+        print(f"⚠️ JSON parse failed for {signal['coin_symbol']}: {e}")
         parsed = {
             "confidence_score": 50,
             "signal_strength": "Medium",
-            "rationale": ai_json
-            "final_trade_signal": "NEUTRAL",
+            "rationale": ai_json,
+            "final_trade_signal": "NEUTRAL",   # ✅ fixed comma
         }
 
     row = {
@@ -68,14 +70,17 @@ def store_ai_signal(signal, ai_json):
         "confidence_score": parsed.get("confidence_score", 50),
         "signal_strength": parsed.get("signal_strength", "Medium"),
         "rationale": parsed.get("rationale", ""),
-        "final_trade_signal": parsed.get("final_trade_signal", "NEUTRAL"),  # ✅ add this back
+        "final_trade_signal": parsed.get("final_trade_signal", "NEUTRAL"),
         "droptab_url": signal.get("droptab_url"),
         "coinglass_url": signal.get("coinglass_url"),
         "coingecko_url": signal.get("coingecko_url"),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
+    print(f"⬆️ Upserting row into ai_signals: {row}")
+
     sb.table("ai_signals").upsert(row).execute()
+    print(f"✅ Stored AI signal for {signal['coin_symbol']}")
 
 # ========= RUN =========
 def run_job():
