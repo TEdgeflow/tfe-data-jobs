@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from supabase import create_client, Client
 from datetime import datetime, timezone
 from openai import OpenAI
@@ -17,6 +18,22 @@ def fetch_signals():
     """Fetch rows from the SQL view v_signal_unlock_liquidity_whales"""
     query = sb.table("v_signal_unlock_liquidity_whales").select("*").execute()
     return query.data or []
+
+# ========= JSON PARSE SAFE =========
+def safe_json_parse(ai_output):
+    try:
+        cleaned = ai_output.strip()
+        # Strip code fences like ```json ... ```
+        cleaned = re.sub(r"^```[a-zA-Z]*|```$", "", cleaned, flags=re.MULTILINE).strip()
+        return json.loads(cleaned)
+    except Exception as e:
+        print(f"⚠️ JSON parse failed, fallback used: {e}")
+        return {
+            "confidence_score": 50,
+            "signal_strength": "Medium",
+            "rationale": ai_output,
+            "final_trade_signal": "NEUTRAL",
+        }
 
 # ========= AI ENRICH =========
 def ai_enrich(signal):
@@ -51,20 +68,9 @@ def ai_enrich(signal):
 # ========= STORE =========
 def store_ai_signal(signal, ai_json):
     """Insert enriched signal into ai_signals table"""
-    try:
-        parsed = json.loads(ai_json)
-        print(f"✅ Parsed AI JSON for {signal['coin_symbol']}: {parsed}")
-    except Exception as e:
-        print(f"⚠️ JSON parse failed for {signal['coin_symbol']}: {e}")
-        parsed = {
-            "confidence_score": 50,
-            "signal_strength": "Medium",
-            "rationale": ai_json,
-            "final_trade_signal": "NEUTRAL",
-        }
+    parsed = safe_json_parse(ai_json)
 
     row = {
-        "id": signal["signal_id"],  # keep UUID from base view
         "token_symbol": signal["coin_symbol"],
         "signal_type": signal["signal_type"],
         "confidence_score": parsed.get("confidence_score", 50),
@@ -78,12 +84,8 @@ def store_ai_signal(signal, ai_json):
     }
 
     print(f"⬆️ Upserting row into ai_signals: {row}")
-
-    try:
-        sb.table("ai_signals").upsert(row).execute()
-        print(f"✅ Stored AI signal for {signal['coin_symbol']}")
-    except Exception as e:
-        print(f"❌ Supabase insert failed for {signal['coin_symbol']}: {e}")
+    sb.table("ai_signals").upsert(row).execute()
+    print(f"✅ Stored AI signal for {signal['coin_symbol']}")
 
 # ========= RUN =========
 def run_job():
