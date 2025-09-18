@@ -35,8 +35,7 @@ def ai_enrich(signal):
     {{
       "confidence_score": (0-100 number),
       "signal_strength": "High/Medium/Low",
-      "rationale": "one-sentence rationale",
-      "final_trade_signal": "BUY/SELL/NEUTRAL"
+      "rationale": "one-sentence rationale"
     }}
     """
 
@@ -57,18 +56,16 @@ def store_ai_signal(signal, ai_json):
         parsed = {
             "confidence_score": 50,
             "signal_strength": "Medium",
-            "rationale": ai_json,
-            
+            "rationale": ai_json
         }
 
     row = {
         "id": signal["signal_id"],  # keep UUID from base view
         "token_symbol": signal["coin_symbol"],
         "signal_type": signal["signal_type"],
-        "confidence_score": parsed["confidence_score"],
-        "signal_strength": parsed["signal_strength"],
-        "rationale": parsed["rationale"],
-        "final_trade_signal": parsed["final_trade_signal"],
+        "confidence_score": parsed.get("confidence_score", 50),
+        "signal_strength": parsed.get("signal_strength", "Medium"),
+        "rationale": parsed.get("rationale", ""),
         "droptab_url": signal.get("droptab_url"),
         "coinglass_url": signal.get("coinglass_url"),
         "coingecko_url": signal.get("coingecko_url"),
