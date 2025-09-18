@@ -36,6 +36,7 @@ def ai_enrich(signal):
       "confidence_score": (0-100 number),
       "signal_strength": "High/Medium/Low",
       "rationale": "one-sentence rationale"
+      "final_trade_signal": "BUY/SELL/NEUTRAL"
     }}
     """
 
