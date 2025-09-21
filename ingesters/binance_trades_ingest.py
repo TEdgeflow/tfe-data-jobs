@@ -10,7 +10,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ===== Config =====
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # expand as needed
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # Add more pairs as needed
 BINANCE_URL = "https://api.binance.com/api/v3/trades"
 
 def fetch_trades(symbol, limit=1000):
@@ -32,7 +32,8 @@ def ingest_trades():
                 "quote_qty": float(t["quoteQty"]),
                 "side": "BUY" if not t["isBuyerMaker"] else "SELL",
                 "is_buyer_maker": t["isBuyerMaker"],
-                "ts": datetime.fromtimestamp(t["time"]/1000.0)
+                # ✅ FIXED: convert datetime to ISO string
+                "ts": datetime.fromtimestamp(t["time"]/1000.0).isoformat()
             }
             rows.append(row)
 
@@ -47,3 +48,4 @@ if __name__ == "__main__":
         except Exception as e:
             print("Error:", e)
         time.sleep(60)   # fetch every 1 minute
+
