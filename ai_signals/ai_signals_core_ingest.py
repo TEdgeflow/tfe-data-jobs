@@ -31,19 +31,22 @@ def already_scored(symbol, signal_time, signal_type):
     return len(res.data) > 0
 
 def upsert_ai_signal(row, confidence, label, summary, simple_summary):
-    ai_row = {
-        "symbol": row["symbol"],
-        "signal_time": row["signal_time"],
-        "signal_type": row["signal_type"],
-        "direction": label,
-        "strength_value": row.get("strength_value"),
-        "confidence": confidence,
-        "ai_summary": summary,          # detailed version
-        "ai_summary_simple": simple_summary,  # simple yes/no/hold
-        "timeframe": row.get("timeframe"),
-    }
-    sb.table("ai_signals_core").upsert(ai_row).execute()
-    print(f"[AI] {row['symbol']} {row['signal_type']} {row.get('timeframe')} → {label} ({confidence}%)")
+    # loop through all timeframes you want to store
+    for tf in ["short_term", "mid_term", "long_term"]:
+        ai_row = {
+            "symbol": row["symbol"],
+            "signal_time": row["signal_time"],
+            "signal_type": row["signal_type"],
+            "direction": label,
+            "strength_value": row.get("strength_value"),
+            "confidence": confidence,
+            "ai_summary": summary,          # detailed version
+            "ai_summary_simple": simple_summary,  # simple yes/no/hold
+            "timeframe": tf,  # force insert all 3 timeframes
+        }
+        sb.table("ai_signals_core").upsert(ai_row).execute()
+        print(f"[AI] {row['symbol']} {row['signal_type']} {tf} → {label} ({confidence}%)")
+
 
 def score_signal(row):
     """Send row to GPT for scoring, with weighted reasoning"""
