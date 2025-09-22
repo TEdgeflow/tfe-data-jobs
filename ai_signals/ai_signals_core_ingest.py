@@ -69,7 +69,7 @@ Output strictly in this format:
 Label: BULLISH/BEARISH/NEUTRAL
 Confidence: NN%
 Short: one-sentence summary
-Detailed: detailed reasoning
+Detailed: detailed reasoning (explicitly mention unlock days if provided)
 """
 
     # Retry logic for API
