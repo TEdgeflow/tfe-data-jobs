@@ -55,7 +55,7 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
 def score_signal(row):
     """Send row to GPT for scoring"""
     prompt = f"""
-You are an AI crypto trading analyst. Given the signal details, summarize in clear terms.
+You are an AI trading analyst. Analyze the following signal and decide direction + confidence. Always explain the reasoning clearly.
 
 Signal data:
 - Symbol: {row['symbol']}
