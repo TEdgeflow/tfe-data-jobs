@@ -23,9 +23,10 @@ def classify_timeframe(signal_type: str) -> str:
     if stype in ["LIQUIDATION", "VWAP", "DELTA", "DELTA_5M"]:
         return "short_term"
     elif stype in ["CVD", "DELTA_1H", "DELTA_4H", "WHALE_INFLOW"]:
-        return "mid_term"
-    elif stype in ["DELTA_1D", "UNLOCK"]:
-        return "long_term"
+    return "mid_term"
+elif stype in ["DELTA_1D", "DELTA_1W", "UNLOCK"]:
+    return "long_term"
+
     else:
         return "short_term"  # fallback
 
