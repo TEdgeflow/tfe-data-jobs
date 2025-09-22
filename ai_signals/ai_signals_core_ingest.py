@@ -63,6 +63,9 @@ Signal data:
 - Timeframe: {row.get('timeframe') or classify_timeframe(row.get('signal_type'))}
 - Strength value: {row.get('strength_value')}
 - Notes: {row.get('notes')}
+- FDV: {row.get('fdv') or "not provided"}
+- Days until unlock: {row.get('unlock_days') or "not provided"}
+- Whale inflow (USD): {row.get('whale_inflow') or "not provided"}
 
 Tasks:
 1. Give one-word label: BULLISH / BEARISH / NEUTRAL.
