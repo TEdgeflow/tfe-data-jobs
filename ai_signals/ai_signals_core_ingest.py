@@ -23,9 +23,9 @@ def map_timeframe(row):
 
     if stype in ["LIQUIDATION", "VWAP", "DELTA", "DELTA_5M"]:
         return "short_term"
-    elif stype in ["CVD", "DELTA_1H", "DELTA_1D"]:
+    elif stype in ["CVD", "DELTA_1H"]:
         return "mid_term"
-    elif stype == "UNLOCK":
+    elif stype in ["DELTA_1D", "UNLOCK"]:
         return "long_term"
     else:
         return "short_term"  # fallback
@@ -45,15 +45,24 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
         "direction": label,
         "strength_value": row.get("strength_value"),
         "confidence": confidence,
-        "ai_summary": summary,          # detailed version
-        "ai_summary_simple": simple_summary,  # simple yes/no/hold
-        "timeframe": map_timeframe(row),      # ✅ timeframe classification
+        "ai_summary": summary,               # detailed version
+        "ai_summary_simple": simple_summary, # short version
+        "timeframe": map_timeframe(row),
     }
     sb.table("ai_signals_core").upsert(ai_row).execute()
     print(f"[AI] {row['symbol']} {row['signal_type']} {map_timeframe(row)} → {label} ({confidence}%)")
 
 def score_signal(row):
-    """Send row to GPT for scoring with reasoning"""
+    """Send row to GPT for scoring with reasoning, include unlock countdown if present"""
+    # calculate days until unlock if applicable
+    days_until_unlock = None
+    if row.get("signal_type") == "UNLOCK" and row.get("signal_time"):
+        try:
+            unlock_date = datetime.fromisoformat(str(row["signal_time"]).replace("Z", "+00:00"))
+            days_until_unlock = (unlock_date.date() - datetime.now(timezone.utc).date()).days
+        except Exception:
+            days_until_unlock = None
+
     prompt = f"""
 You are an AI trading analyst. Analyze the following signal and decide direction + confidence.
 Always explain the reasoning clearly.
@@ -65,8 +74,9 @@ Signal:
 - Strength: {row.get('strength_value')}
 - Timeframe: {map_timeframe(row)}
 - Notes: {row['notes']}
+{"- Days until unlock: " + str(days_until_unlock) if days_until_unlock is not None else ""}
 
-Apply these weights:
+Apply these weights when forming your conclusion:
 - Short-term alignment (VWAP + Delta + Liquidations) = +30%
 - Mid-term confirmation (1h/1d Delta, CVD) = +40%
 - Long-term unlock risk = -20%
@@ -80,9 +90,9 @@ Detailed: detailed reasoning
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",  # upgrade to gpt-5 if enabled
+        model="gpt-4o-mini",  # or gpt-5-mini if available
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=250,
+        max_tokens=300,
     )
 
     text = response.choices[0].message["content"].strip()
@@ -117,6 +127,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
