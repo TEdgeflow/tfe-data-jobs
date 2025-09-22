@@ -8,7 +8,7 @@ from openai import OpenAI
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "24"))  # default = 24h
+LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "24"))  # default 24h
 
 if not SUPABASE_URL or not SUPABASE_KEY or not OPENAI_API_KEY:
     raise RuntimeError("Missing required environment variables")
@@ -17,13 +17,12 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========= HELPERS =========
-def map_timeframe(row):
+def classify_timeframe(signal_type: str) -> str:
     """Classify timeframe into short, mid, or long term based on signal_type."""
-    stype = row.get("signal_type", "").upper()
-
+    stype = (signal_type or "").upper()
     if stype in ["LIQUIDATION", "VWAP", "DELTA", "DELTA_5M"]:
         return "short_term"
-    elif stype in ["CVD", "DELTA_1H"]:
+    elif stype in ["CVD", "DELTA_1H", "DELTA_4H", "WHALE_INFLOW"]:
         return "mid_term"
     elif stype in ["DELTA_1D", "UNLOCK"]:
         return "long_term"
@@ -42,67 +41,54 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
         "symbol": row["symbol"],
         "signal_time": row["signal_time"],
         "signal_type": row["signal_type"],
+        "timeframe": row.get("timeframe") or classify_timeframe(row.get("signal_type")),
         "direction": label,
         "strength_value": row.get("strength_value"),
         "confidence": confidence,
-        "ai_summary": summary,               # detailed version
-        "ai_summary_simple": simple_summary, # short version
-        "timeframe": map_timeframe(row),
+        "ai_summary": summary,              # detailed version
+        "ai_summary_simple": simple_summary, # simple one-liner
     }
     sb.table("ai_signals_core").upsert(ai_row).execute()
-    print(f"[AI] {row['symbol']} {row['signal_type']} {map_timeframe(row)} → {label} ({confidence}%)")
+    print(f"[AI] {row['symbol']} {row['signal_type']} {ai_row['timeframe']} → {label} ({confidence}%)")
 
 def score_signal(row):
-    """Send row to GPT for scoring with reasoning, include unlock countdown if present"""
-    # calculate days until unlock if applicable
-    days_until_unlock = None
-    if row.get("signal_type") == "UNLOCK" and row.get("signal_time"):
-        try:
-            unlock_date = datetime.fromisoformat(str(row["signal_time"]).replace("Z", "+00:00"))
-            days_until_unlock = (unlock_date.date() - datetime.now(timezone.utc).date()).days
-        except Exception:
-            days_until_unlock = None
-
+    """Send row to GPT for scoring"""
     prompt = f"""
-You are an AI trading analyst. Analyze the following signal and decide direction + confidence.
-Always explain the reasoning clearly.
+You are an AI crypto trading analyst. Given the signal details, summarize in clear terms.
 
-Signal:
+Signal data:
 - Symbol: {row['symbol']}
-- Type: {row['signal_type']}
-- Direction: {row['direction']}
-- Strength: {row.get('strength_value')}
-- Timeframe: {map_timeframe(row)}
-- Notes: {row['notes']}
-{"- Days until unlock: " + str(days_until_unlock) if days_until_unlock is not None else ""}
+- Signal type: {row['signal_type']}
+- Timeframe: {row.get('timeframe') or classify_timeframe(row.get('signal_type'))}
+- Strength value: {row.get('strength_value')}
+- Notes: {row.get('notes')}
 
-Apply these weights when forming your conclusion:
-- Short-term alignment (VWAP + Delta + Liquidations) = +30%
-- Mid-term confirmation (1h/1d Delta, CVD) = +40%
-- Long-term unlock risk = -20%
-- Whale inflow = +10%
-
-Output strictly in this format:
-Label: BULLISH/BEARISH/NEUTRAL
-Confidence: NN%
-Short: one-sentence summary
-Detailed: detailed reasoning
-"""
+Tasks:
+1. Give one-word label: BULLISH / BEARISH / NEUTRAL.
+2. Confidence % (0–100).
+3. Short simple summary (e.g., "Bullish pressure, align with 1h delta").
+4. Detailed reasoning that:
+   - Explains why it’s bullish/bearish/neutral.
+   - Mentions timeframe context (short/mid/long).
+   - If unlock is present, mention days until unlock & % of mcap.
+   - If whale inflow is present, mention size and impact.
+   - If delta or CVD are flat/rising/falling, interpret that.
+   - Include any conflicts (e.g. bearish liquidation but bullish inflow).
+    """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",  # or gpt-5-mini if available
+        model="gpt-5-mini",   # ✅ using gpt-5-mini as you confirmed
         messages=[{"role": "user", "content": prompt}],
         max_tokens=300,
     )
 
     text = response.choices[0].message["content"].strip()
-
-    # naive parsing
+    # simple parsing
     lines = text.split("\n")
-    label = next((l.split(":")[-1].strip().upper() for l in lines if "Label" in l), "NEUTRAL")
-    confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "Confidence" in l), 50)
-    simple_summary = next((l.split(":")[-1].strip() for l in lines if "Short" in l), "")
-    detailed_summary = next((l.split(":")[-1].strip() for l in lines if "Detailed" in l), text)
+    label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
+    confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "CONFIDENCE" in l.upper()), 50)
+    simple_summary = next((l.split(":")[-1].strip() for l in lines if "SHORT" in l.upper()), "")
+    detailed_summary = next((l.split(":")[-1].strip() for l in lines if "DETAIL" in l.upper()), text)
 
     return label, confidence, detailed_summary, simple_summary
 
@@ -127,6 +113,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
