@@ -36,7 +36,7 @@ def fetch_recent_signals():
     result = query.execute()
     return result.data or []
 
-def upsert_ai_signal(row, confidence, label, summary, simple_summary):
+def upsert_ai_signal(row, confidence, label, summary, simple_summary, fdv_adj):
     ai_row = {
         "symbol": row["symbol"],
         "signal_time": row["signal_time"],
@@ -47,6 +47,7 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
         "confidence": confidence,
         "ai_summary": summary,               # detailed version
         "ai_summary_simple": simple_summary, # simple one-liner
+         "fdv_adj": fdv_adj,                  # ✅ new column
     }
     sb.table("ai_signals_core").upsert(ai_row).execute()
     print(f"[AI] {row['symbol']} {row['signal_type']} {ai_row['timeframe']} → {label} ({confidence}%)")
