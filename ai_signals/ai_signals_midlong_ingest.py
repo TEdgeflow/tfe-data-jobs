@@ -32,15 +32,19 @@ def classify_timeframe(signal_type: str) -> str:
         return "short_term"
 
 def fetch_recent_signals():
+    """Fetch only mid/long-term signals within lookback window, capped at 1000 rows"""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)).isoformat()
-    query = (
+    result = (
         sb.table("v_ai_signals_core")
         .select("*")
         .gte("signal_time", cutoff)
-        .in_("signal_type", MID_LONG_TYPES)   # ✅ only mid/long-term signals
+        .in_("signal_type", MID_LONG_TYPES)
+        .order("signal_time", desc=True)  # ✅ newest first
+        .limit(1000)  # ✅ cap rows to prevent timeout
+        .execute()
     )
-    result = query.execute()
     return result.data or []
+
 
 def upsert_ai_signal(row, confidence, label, summary, simple_summary, fdv_adj):
     ai_row = {
