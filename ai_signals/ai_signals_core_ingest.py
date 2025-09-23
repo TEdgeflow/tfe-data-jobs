@@ -57,9 +57,9 @@ def score_signal(row):
     # normalize strength_value to 0–100
     strength_value = float(row.get("strength_value", 0))
     strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
-
-    prompt = f"""
-You are an AI trading analyst. Analyze the following signal and decide direction + confidence. 
+    
+prompt = f"""
+You are an AI trading analyst. Analyze the following signal and decide direction + confidence.
 Always explain the reasoning clearly.
 
 Signal data:
@@ -70,27 +70,32 @@ Signal data:
 - Confidence (raw): {row.get("confidence")}
 - Delta/Volume info: {row.get("delta_usd")}
 - Notes: {row.get('notes')}
-- FDV: {row.get('fdv') or "not provided"}
+- FDV: {fdv}
+- Market Cap: {mcap}
 - Days until unlock: {row.get('unlock_days') or "not provided"}
 - Whale inflow (USD): {row.get('whale_inflow') or "not provided"}
 
+Weights to apply:
+- Short-term alignment (VWAP + Delta + Liquidations) = +30%
+- Mid-term confirmation (1h/1d Delta, CVD) = +40%
+- Long-term unlock risk = -20%
+- Whale inflow = +10%
+- FDV adjustment = {fdv_adj}%
+
 Tasks:
 1. Give one-word label: BULLISH / BEARISH / NEUTRAL.
-2. Confidence % (0–100).
-   Apply these weights when deciding confidence:
-   - Short-term alignment (VWAP + Delta + Liquidations) = +30%
-   - Mid-term confirmation (1h/4h Delta, CVD) = +40%
-   - Long-term unlock risk = -20%
-   - Whale inflow = +10%
+2. Confidence % (0–100), after applying weights above.
 3. Short simple summary (e.g., "Bullish pressure, align with 1h delta").
 4. Detailed reasoning that:
-   - Mentions timeframe context (short/mid/long explicitly in summary and detail).
+   - Mentions timeframe (short/mid/long explicitly).
    - Explains why it’s bullish/bearish/neutral.
    - If unlock is present, mention days until unlock & % of mcap.
    - If whale inflow is present, mention size and impact.
    - If delta or CVD are flat/rising/falling, interpret that.
-   - Include any conflicts (e.g. bearish liquidation but bullish inflow).
-    """
+   - If FDV is high vs MCAP, explain how it increases/decreases risk.
+   - Include conflicts (e.g., bearish liquidation but bullish inflow).
+"""
+
 
     response = client.chat.completions.create(
         model="gpt-5-mini",   # ✅ using gpt-5-mini as you confirmed
