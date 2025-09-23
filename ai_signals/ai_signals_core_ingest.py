@@ -112,10 +112,11 @@ Tasks:
     response = client.chat.completions.create(
         model="gpt-5-mini",
         messages=[{"role": "user", "content": prompt}],
-        max_completion_tokens=300,
+        max_tokens=300,
     )
 
-   text = response.choices[0].message.content.strip()
+    text = response.choices[0].message.content.strip()
+    # simple parsing
     lines = text.split("\n")
     label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
     confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "CONFIDENCE" in l.upper()), 50)
@@ -123,6 +124,7 @@ Tasks:
     detailed_summary = next((l.split(":")[-1].strip() for l in lines if "DETAIL" in l.upper()), text)
 
     return label, confidence, detailed_summary, simple_summary, fdv_adj
+
 
 # ========= MAIN LOOP =========
 def main():
