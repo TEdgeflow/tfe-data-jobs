@@ -54,8 +54,8 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
 
 def score_signal(row):
     """Send row to GPT for scoring"""
+    
     # normalize strength_value to 0–100
-
 strength_value = float(row.get("strength_value", 0))
 strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
 
