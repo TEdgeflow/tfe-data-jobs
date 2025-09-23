@@ -23,10 +23,9 @@ def classify_timeframe(signal_type: str) -> str:
     if stype in ["LIQUIDATION", "VWAP", "DELTA", "DELTA_5M"]:
         return "short_term"
     elif stype in ["CVD", "DELTA_1H", "DELTA_4H", "WHALE_INFLOW"]:
-    return "mid_term"
-elif stype in ["DELTA_1D", "DELTA_1W", "UNLOCK"]:
-    return "long_term"
-
+        return "mid_term"
+    elif stype in ["DELTA_1D", "DELTA_1W", "UNLOCK"]:
+        return "long_term"
     else:
         return "short_term"  # fallback
 
@@ -56,11 +55,12 @@ def score_signal(row):
     """Send row to GPT for scoring"""
     
     # normalize strength_value to 0–100
-strength_value = float(row.get("strength_value", 0))
-strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
+    strength_value = float(row.get("strength_value", 0))
+    strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
 
     prompt = f"""
-You are an AI trading analyst. Analyze the following signal and decide direction + confidence. Always explain the reasoning clearly.
+You are an AI trading analyst. Analyze the following signal and decide direction + confidence. 
+Always explain the reasoning clearly.
 
 Signal data:
 - Symbol: {row['symbol']}
@@ -76,7 +76,12 @@ Signal data:
 
 Tasks:
 1. Give one-word label: BULLISH / BEARISH / NEUTRAL.
-2. Confidence % (0–100). 
+2. Confidence % (0–100).
+   Apply these weights when deciding confidence:
+   - Short-term alignment (VWAP + Delta + Liquidations) = +30%
+   - Mid-term confirmation (1h/4h Delta, CVD) = +40%
+   - Long-term unlock risk = -20%
+   - Whale inflow = +10%
 3. Short simple summary (e.g., "Bullish pressure, align with 1h delta").
 4. Detailed reasoning that:
    - Mentions timeframe context (short/mid/long explicitly in summary and detail).
@@ -124,6 +129,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
