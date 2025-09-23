@@ -45,7 +45,7 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
         "direction": label,
         "strength_value": row.get("strength_value"),
         "confidence": confidence,
-        "ai_summary": summary,              # detailed version
+        "ai_summary": summary,               # detailed version
         "ai_summary_simple": simple_summary, # simple one-liner
     }
     sb.table("ai_signals_core").upsert(ai_row).execute()
@@ -53,12 +53,25 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
 
 def score_signal(row):
     """Send row to GPT for scoring"""
-    
+
     # normalize strength_value to 0–100
     strength_value = float(row.get("strength_value", 0))
     strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
-    
-prompt = f"""
+
+    # FDV adjustment
+    fdv = float(row.get("fdv") or 0)
+    mcap = float(row.get("market_cap") or 0)
+    fdv_adj = 0
+    if fdv and mcap:
+        ratio = fdv / mcap
+        if ratio > 5:      # very high FDV vs MCAP
+            fdv_adj = -15
+        elif ratio > 2:    # moderately high
+            fdv_adj = -10
+        elif ratio < 1:    # FDV below MCAP (rare)
+            fdv_adj = +5
+
+    prompt = f"""
 You are an AI trading analyst. Analyze the following signal and decide direction + confidence.
 Always explain the reasoning clearly.
 
@@ -77,7 +90,7 @@ Signal data:
 
 Weights to apply:
 - Short-term alignment (VWAP + Delta + Liquidations) = +30%
-- Mid-term confirmation (1h/1d Delta, CVD) = +40%
+- Mid-term confirmation (1h/4h/1d Delta, CVD) = +40%
 - Long-term unlock risk = -20%
 - Whale inflow = +10%
 - FDV adjustment = {fdv_adj}%
@@ -91,14 +104,12 @@ Tasks:
    - Explains why it’s bullish/bearish/neutral.
    - If unlock is present, mention days until unlock & % of mcap.
    - If whale inflow is present, mention size and impact.
-   - If delta or CVD are flat/rising/falling, interpret that.
    - If FDV is high vs MCAP, explain how it increases/decreases risk.
    - Include conflicts (e.g., bearish liquidation but bullish inflow).
 """
 
-
     response = client.chat.completions.create(
-        model="gpt-5-mini",   # ✅ using gpt-5-mini as you confirmed
+        model="gpt-5-mini",   # ✅ your requested model
         messages=[{"role": "user", "content": prompt}],
         max_tokens=300,
     )
