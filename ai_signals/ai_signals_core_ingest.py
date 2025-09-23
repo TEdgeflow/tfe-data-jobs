@@ -116,8 +116,7 @@ response = client.chat.completions.create(
 )
 
 text = response.choices[0].message["content"].strip()
-
-    # simple parsing
+   # simple parsing
     lines = text.split("\n")
     label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
     confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "CONFIDENCE" in l.upper()), 50)
