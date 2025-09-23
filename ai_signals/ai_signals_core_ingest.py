@@ -47,10 +47,10 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary, fdv_adj):
         "confidence": confidence,
         "ai_summary": summary,               # detailed version
         "ai_summary_simple": simple_summary, # simple one-liner
-         "fdv_adj": fdv_adj,                  # ✅ new column
+        "fdv_adj": fdv_adj,                  # ✅ new column
     }
     sb.table("ai_signals_core").upsert(ai_row).execute()
-    print(f"[AI] {row['symbol']} {row['signal_type']} {ai_row['timeframe']} → {label} ({confidence}%)")
+    print(f"[AI] {row['symbol']} {row['signal_type']} {ai_row['timeframe']} → {label} ({confidence}%) FDV_adj={fdv_adj}")
 
 def score_signal(row):
     """Send row to GPT for scoring"""
@@ -110,9 +110,9 @@ Tasks:
 """
 
     response = client.chat.completions.create(
-        model="gpt-5-mini",   # ✅ your requested model
+        model="gpt-5-mini",   # ✅ final model
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=300,
+        max_tokens=350,
     )
 
     text = response.choices[0].message["content"].strip()
@@ -123,7 +123,7 @@ Tasks:
     simple_summary = next((l.split(":")[-1].strip() for l in lines if "SHORT" in l.upper()), "")
     detailed_summary = next((l.split(":")[-1].strip() for l in lines if "DETAIL" in l.upper()), text)
 
-    return label, confidence, detailed_summary, simple_summary
+    return label, confidence, detailed_summary, simple_summary, fdv_adj
 
 # ========= MAIN LOOP =========
 def main():
@@ -134,8 +134,8 @@ def main():
 
             for row in signals:
                 try:
-                    label, conf, detailed, simple = score_signal(row)
-                    upsert_ai_signal(row, conf, label, detailed, simple)
+                    label, conf, detailed, simple, fdv_adj = score_signal(row)
+                    upsert_ai_signal(row, conf, label, detailed, simple, fdv_adj)
                 except Exception as e:
                     print(f"[error scoring] {row}: {e}")
 
@@ -146,6 +146,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
