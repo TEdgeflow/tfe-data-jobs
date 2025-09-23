@@ -108,15 +108,14 @@ Tasks:
    - If FDV is high vs MCAP, explain how it increases/decreases risk.
    - Include conflicts (e.g., bearish liquidation but bullish inflow).
 """
-    
-response = client.chat.completions.create(
-    model="gpt-5-mini",
-    messages=[{"role": "user", "content": prompt}],
-    max_tokens=300,
-)
 
-text = response.choices[0].message["content"].strip()
-   # simple parsing
+    response = client.chat.completions.create(
+        model="gpt-5-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=300,
+    )
+
+    text = response.choices[0].message["content"].strip()
     lines = text.split("\n")
     label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
     confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "CONFIDENCE" in l.upper()), 50)
