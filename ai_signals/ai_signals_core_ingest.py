@@ -115,7 +115,8 @@ response = client.chat.completions.create(
     max_tokens=300,
 )
 
-   text = response.choices[0].message.content.strip()
+text = response.choices[0].message["content"].strip()
+
     # simple parsing
     lines = text.split("\n")
     label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
