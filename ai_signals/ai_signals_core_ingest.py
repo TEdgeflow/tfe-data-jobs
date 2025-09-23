@@ -109,11 +109,12 @@ Tasks:
    - Include conflicts (e.g., bearish liquidation but bullish inflow).
 """
 
-    response = client.chat.completions.create(
+response = client.chat.completions.create(
     model="gpt-5-mini",
     messages=[{"role": "user", "content": prompt}],
-    max_completion_tokens=300,
+    max_tokens=300,
 )
+
 
    text = response.choices[0].message.content.strip()
     # simple parsing
