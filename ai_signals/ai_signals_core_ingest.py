@@ -54,6 +54,11 @@ def upsert_ai_signal(row, confidence, label, summary, simple_summary):
 
 def score_signal(row):
     """Send row to GPT for scoring"""
+    # normalize strength_value to 0–100
+
+strength_value = float(row.get("strength_value", 0))
+strength_norm = min(100, max(0, round(strength_value / 1000, 2)))
+
     prompt = f"""
 You are an AI trading analyst. Analyze the following signal and decide direction + confidence. Always explain the reasoning clearly.
 
@@ -62,6 +67,8 @@ Signal data:
 - Signal type: {row['signal_type']}
 - Timeframe: {row.get('timeframe') or classify_timeframe(row.get('signal_type'))}
 - Strength value: {row.get('strength_value')}
+- Confidence (raw): {row.get("confidence")}
+- Delta/Volume info: {row.get("delta_usd")}
 - Notes: {row.get('notes')}
 - FDV: {row.get('fdv') or "not provided"}
 - Days until unlock: {row.get('unlock_days') or "not provided"}
@@ -69,11 +76,11 @@ Signal data:
 
 Tasks:
 1. Give one-word label: BULLISH / BEARISH / NEUTRAL.
-2. Confidence % (0–100).
+2. Confidence % (0–100). 
 3. Short simple summary (e.g., "Bullish pressure, align with 1h delta").
 4. Detailed reasoning that:
+   - Mentions timeframe context (short/mid/long explicitly in summary and detail).
    - Explains why it’s bullish/bearish/neutral.
-   - Mentions timeframe context (short/mid/long).
    - If unlock is present, mention days until unlock & % of mcap.
    - If whale inflow is present, mention size and impact.
    - If delta or CVD are flat/rising/falling, interpret that.
