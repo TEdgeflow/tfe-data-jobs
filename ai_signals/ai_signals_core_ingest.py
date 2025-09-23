@@ -115,7 +115,7 @@ Tasks:
         max_completion_tokens=300,
     )
 
-    text = response.choices[0].message["content"].strip()
+   text = response.choices[0].message.content.strip()
     lines = text.split("\n")
     label = next((l.split(":")[-1].strip().upper() for l in lines if "LABEL" in l.upper()), "NEUTRAL")
     confidence = next((int(l.split(":")[-1].strip().replace("%", "")) for l in lines if "CONFIDENCE" in l.upper()), 50)
