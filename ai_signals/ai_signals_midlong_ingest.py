@@ -35,12 +35,12 @@ def fetch_recent_signals():
     """Fetch only mid/long-term signals within lookback window, capped at 1000 rows"""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)).isoformat()
     result = (
-        sb.table("v_ai_signals_core")
+        sb.table("ai_signals_core")   # ✅ use table instead of view
         .select("*")
         .gte("signal_time", cutoff)
         .in_("signal_type", MID_LONG_TYPES)
-        .order("signal_time", desc=True)  # ✅ newest first
-        .limit(1000)  # ✅ cap rows to prevent timeout
+        .order("signal_time", desc=True)
+        .limit(1000)  # prevent timeout
         .execute()
     )
     return result.data or []
