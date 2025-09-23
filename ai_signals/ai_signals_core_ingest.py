@@ -1,5 +1,6 @@
-import os
+import os 
 import time
+import re
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 from openai import OpenAI
@@ -109,7 +110,6 @@ Tasks:
    - Include conflicts (e.g., bearish liquidation but bullish inflow).
 """
 
-    # ✅ indentation corrected
     response = client.chat.completions.create(
         model="gpt-5-mini",
         messages=[{"role": "user", "content": prompt}],
@@ -117,17 +117,37 @@ Tasks:
     )
 
     text = response.choices[0].message.content.strip()
-
-    # simple parsing
     lines = text.split("\n")
-    label = next((l.split(":")[-1].strip().upper()
-                  for l in lines if "LABEL" in l.upper()), "NEUTRAL")
-    confidence = next((int(l.split(":")[-1].strip().replace("%", ""))
-                       for l in lines if "CONFIDENCE" in l.upper()), 50)
-    simple_summary = next((l.split(":")[-1].strip()
-                           for l in lines if "SHORT" in l.upper()), "")
-    detailed_summary = next((l.split(":")[-1].strip()
-                             for l in lines if "DETAIL" in l.upper()), text)
+
+    # ✅ safer parsing
+    label, confidence, simple_summary, detailed_summary = "NEUTRAL", 50, "", text
+
+    for line in lines:
+        low = line.lower()
+
+        if "label" in low:
+            parts = re.split(r"[:=\-–>]+", line, maxsplit=1)
+            if len(parts) > 1:
+                label = parts[1].strip().upper().split()[0]
+
+        elif "confidence" in low:
+            parts = re.split(r"[:=\-–>]+", line, maxsplit=1)
+            if len(parts) > 1:
+                val = parts[1].strip().replace("%", "").split()[0]
+                try:
+                    confidence = int(val)
+                except ValueError:
+                    pass
+
+        elif "short" in low and not simple_summary:
+            parts = re.split(r"[:=\-–>]+", line, maxsplit=1)
+            if len(parts) > 1:
+                simple_summary = parts[1].strip()
+
+        elif "detail" in low and detailed_summary == text:
+            parts = re.split(r"[:=\-–>]+", line, maxsplit=1)
+            if len(parts) > 1:
+                detailed_summary = parts[1].strip()
 
     return label, confidence, detailed_summary, simple_summary, fdv_adj
 
@@ -152,6 +172,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
