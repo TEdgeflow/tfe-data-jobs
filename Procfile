@@ -28,7 +28,7 @@ unlock_ai: python ai_signals/ai_signal_unlock_liquidity.py
 worker: python ingesters/binance_trades_ingest.py
 worker: python ai_signals/ai_signals_core_ingest.py
 worker: python ai_signals/ai_signals_midlong_ingest.py
-release: python ingesters/binance_trades_agg_backfill.py
+binance_trades_agg_backfill: python ingesters/binance_trades_agg_backfill.py
 agg-worker: python ingesters/binance_trades_agg_ingest.py
 
 
