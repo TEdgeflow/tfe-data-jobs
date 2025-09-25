@@ -29,7 +29,7 @@ worker: python ingesters/binance_trades_ingest.py
 worker: python ai_signals/ai_signals_core_ingest.py
 worker: python ai_signals/ai_signals_midlong_ingest.py
 binance_trades_agg_backfill: python ingesters/binance_trades_agg_backfill.py
-agg-worker: python ingesters/binance_trades_agg_ingest.py
+binance_trades_agg_backfill: python ingesters/binance_trades_agg_backfill.py
 
 
 
