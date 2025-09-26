@@ -70,10 +70,19 @@ def process_trades(symbol="BTCUSDT"):
     for row in agg_map.values():
         row["cvd"] = row["delta"]
 
-    rows = list(agg_map.values())
-    if rows:
+# Ensure all datetime fields are strings
+for row in agg_map.values():
+    if isinstance(row["bucket_5m"], datetime):
+        row["bucket_5m"] = row["bucket_5m"].isoformat()
+
+rows = list(agg_map.values())
+if rows:
+    try:
         sb.table("binance_trades_agg_5m").upsert(rows).execute()
-        print(f"✅ Upserted {len(rows)} rows into binance_trades_agg_5m")
+        print(f"✅ {symbol} → {len(rows)} rows")
+    except Exception as e:
+        print(f"[DB error] {symbol}: {e}")
+
 
 # ========= MAIN LOOP =========
 def main():
