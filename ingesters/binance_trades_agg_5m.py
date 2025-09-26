@@ -1,96 +1,92 @@
 import os
-import time
 import requests
-from datetime import datetime, timedelta, timezone
+import time
+from datetime import datetime, timezone
 from supabase import create_client, Client
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "0"))
+BINANCE_URL = "https://api.binance.com/api/v3/trades"
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("Missing required environment variables")
+    raise RuntimeError("Missing Supabase credentials")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= HELPERS =========
-def get_all_symbols():
-    """Fetch all Binance USDT pairs"""
-    url = "https://api.binance.com/api/v3/exchangeInfo"
-    resp = requests.get(url).json()
-    symbols = [s["symbol"] for s in resp["symbols"] if s["quoteAsset"] == "USDT"]
-    if LIMIT_SYMBOLS > 0:
-        symbols = symbols[:LIMIT_SYMBOLS]
-    return symbols
+def get_binance_trades(symbol="BTCUSDT", limit=1000):
+    """Fetch latest trades from Binance"""
+    url = f"{BINANCE_URL}?symbol={symbol}&limit={limit}"
+    resp = requests.get(url)
+    resp.raise_for_status()
+    return resp.json()
 
-def fetch_trades(symbol):
-    """Fetch last 5 minutes of trades for a symbol"""
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(minutes=5)
-    url = "https://api.binance.com/api/v3/aggTrades"
-    params = {
-        "symbol": symbol,
-        "startTime": int(start.timestamp() * 1000),
-        "endTime": int(end.timestamp() * 1000)
-    }
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
+def bucketize(ts: int):
+    """Return 5m bucket from trade timestamp"""
+    dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+    bucket_5m = dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
+    return bucket_5m
 
-def ingest_symbol(symbol):
-    """Aggregate 5m trades into Supabase"""
-    trades = fetch_trades(symbol)
-    if not trades:
-        return
-
-    buy_vol, sell_vol = 0, 0
-    bullish_trades, bearish_trades = 0, 0
-    delta, cvd = 0, 0
+def process_trades(symbol="BTCUSDT"):
+    """Fetch trades, bucketize, and upsert into binance_trades_agg_5m"""
+    trades = get_binance_trades(symbol=symbol)
+    agg_map = {}
 
     for t in trades:
-        qty = float(t["q"])
-        price = float(t["p"])
+        ts = t["time"]
+        qty = float(t["qty"])
+        price = float(t["price"])
         quote_qty = qty * price
-        is_buyer_maker = t["m"]
+        is_buyer_maker = t["isBuyerMaker"]
 
-        if is_buyer_maker:  # sell
-            sell_vol += quote_qty
-            delta -= quote_qty
-            bearish_trades += 1
-        else:  # buy
-            buy_vol += quote_qty
-            delta += quote_qty
-            bullish_trades += 1
+        side = "SELL" if is_buyer_maker else "BUY"
+        bucket_5m = bucketize(ts)
 
-        cvd += delta
+        key = bucket_5m
 
-    bucket_5m = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        if key not in agg_map:
+            agg_map[key] = {
+                "symbol": symbol,
+                "bucket_5m": bucket_5m.isoformat(),
+                "buy_vol": 0,
+                "sell_vol": 0,
+                "delta": 0,
+                "bullish_trades": 0,
+                "bearish_trades": 0,
+            }
 
-    row = {
-        "symbol": symbol,
-        "bucket_5m": bucket_5m,
-        "buy_vol": buy_vol,
-        "sell_vol": sell_vol,
-        "delta": delta,
-        "cvd": cvd,
-        "bullish_trades": bullish_trades,
-        "bearish_trades": bearish_trades,
-    }
+        row = agg_map[key]
+        if side == "BUY":
+            row["buy_vol"] += quote_qty
+            row["delta"] += quote_qty
+            row["bullish_trades"] += 1
+        else:
+            row["sell_vol"] += quote_qty
+            row["delta"] -= quote_qty
+            row["bearish_trades"] += 1
 
-    sb.table("binance_trades_agg_5m").upsert(row).execute()
-    print(f"Upserted 1 row for {symbol}")
+    # CVD = delta (per 5m window here)
+    for row in agg_map.values():
+        row["cvd"] = row["delta"]
 
-def run_all():
-    symbols = get_all_symbols()
-    for s in symbols:
-        try:
-            ingest_symbol(s.strip())
-        except Exception as e:
-            print(f"Error for {s}: {e}")
+    rows = list(agg_map.values())
+    if rows:
+        sb.table("binance_trades_agg_5m").upsert(rows).execute()
+        print(f"✅ Upserted {len(rows)} rows into binance_trades_agg_5m")
+
+# ========= MAIN LOOP =========
+def main():
+    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later with all USDT pairs
+    while True:
+        for sym in symbols:
+            try:
+                process_trades(symbol=sym)
+            except Exception as e:
+                print(f"[error] {sym}: {e}")
+        time.sleep(300)  # run every 5 minutes
 
 if __name__ == "__main__":
-    while True:
-        run_all()
-        time.sleep(300)  # every 5 minutes
+    main()
+
 
