@@ -23,13 +23,13 @@ def get_binance_trades(symbol="BTCUSDT", limit=1000):
     return resp.json()
 
 def bucketize(ts: int):
-    """Return 5m bucket from trade timestamp"""
+    """Return 15m, 1h, 1d buckets from trade timestamp"""
     dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     bucket_5m = dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
-    return bucket_5m
+    return bucket_5m, 
 
 def process_trades(symbol="BTCUSDT"):
-    """Fetch trades, bucketize, and upsert into binance_trades_agg_5m"""
+    """Fetch trades, bucketize, and upsert into binance_trades_agg"""
     trades = get_binance_trades(symbol=symbol)
     agg_map = {}
 
@@ -41,9 +41,9 @@ def process_trades(symbol="BTCUSDT"):
         is_buyer_maker = t["isBuyerMaker"]
 
         side = "SELL" if is_buyer_maker else "BUY"
-        bucket_5m = bucketize(ts)
+        bucket_15m, bucket_1h, bucket_1d = bucketize(ts)
 
-        key = bucket_5m
+        key = (bucket_15m, bucket_1h, bucket_1d)
 
         if key not in agg_map:
             agg_map[key] = {
@@ -66,34 +66,26 @@ def process_trades(symbol="BTCUSDT"):
             row["delta"] -= quote_qty
             row["bearish_trades"] += 1
 
-    # CVD = delta (per 5m window here)
+    # Calculate CVD (cumulative delta over time)
+    # ✅ Here we do it simply per run, you can later extend with windowed CV
     for row in agg_map.values():
         row["cvd"] = row["delta"]
 
-# Ensure all datetime fields are strings
-for row in agg_map.values():
-    if isinstance(row["bucket_5m"], datetime):
-        row["bucket_5m"] = row["bucket_5m"].isoformat()
-
-rows = list(agg_map.values())
-if rows:
-    try:
-        sb.table("binance_trades_agg_5m").upsert(rows).execute()
-        print(f"✅ {symbol} → {len(rows)} rows")
-    except Exception as e:
-        print(f"[DB error] {symbol}: {e}")
-
+    rows = list(agg_map.values())
+    if rows:
+        sb.table("binance_trades_agg").upsert(rows).execute()
+        print(f"✅ Upserted {len(rows)} rows into binance_trades_agg")
 
 # ========= MAIN LOOP =========
 def main():
-    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later with all USDT pairs
+    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later
     while True:
         for sym in symbols:
             try:
                 process_trades(symbol=sym)
             except Exception as e:
                 print(f"[error] {sym}: {e}")
-        time.sleep(300)  # run every 5 minutes
+        time.sleep(300)  # fetch every 5 min
 
 if __name__ == "__main__":
     main()
