@@ -1,95 +1,100 @@
 import os
-import time
-from datetime import datetime, timedelta, timezone
 import requests
+import time
+from datetime import datetime, timezone
 from supabase import create_client, Client
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-BINANCE_URL = "https://api.binance.com/api/v3/aggTrades"
+BINANCE_URL = "https://api.binance.com/api/v3/trades"
+EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing Supabase credentials")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def fetch_trades(symbol: str, start_time: int, end_time: int):
-    """Fetch trades from Binance aggTrades endpoint"""
-    params = {
-        "symbol": symbol,
-        "startTime": start_time,
-        "endTime": end_time,
-        "limit": 1000
-    }
-    resp = requests.get(BINANCE_URL, params=params)
+# ========= HELPERS =========
+def get_all_usdt_symbols():
+    """Fetch all USDT trading pairs from Binance"""
+    resp = requests.get(EXCHANGE_INFO_URL)
+    resp.raise_for_status()
+    data = resp.json()
+    return [s["symbol"] for s in data["symbols"] if s["symbol"].endswith("USDT")]
+
+def get_binance_trades(symbol="BTCUSDT", limit=1000):
+    """Fetch latest trades from Binance"""
+    url = f"{BINANCE_URL}?symbol={symbol}&limit={limit}"
+    resp = requests.get(url)
     resp.raise_for_status()
     return resp.json()
 
-def bucket_5m(ts: int) -> datetime:
+def bucketize_5m(ts: int):
+    """Return 5m bucket from trade timestamp"""
     dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-    floored = dt - timedelta(minutes=dt.minute % 5,
-                             seconds=dt.second,
-                             microseconds=dt.microsecond)
-    return floored
+    bucket_5m = dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
+    return bucket_5m
 
-def ingest_symbol(symbol: str):
-    now = datetime.now(timezone.utc)
-    start = now - timedelta(minutes=10)  # look back slightly for safety
-    start_ms = int(start.timestamp() * 1000)
-    end_ms = int(now.timestamp() * 1000)
+def process_trades(symbol="BTCUSDT"):
+    """Fetch trades, bucketize, and upsert into binance_trades_agg_5m"""
+    trades = get_binance_trades(symbol=symbol)
+    agg_map = {}
 
-    trades = fetch_trades(symbol, start_ms, end_ms)
-    if not trades:
-        return
-
-    rows = {}
     for t in trades:
-        price = float(t["p"])
-        qty = float(t["q"])
-        is_buyer_maker = t["m"]
-        ts = int(t["T"])
-        bucket = bucket_5m(ts)
+        ts = t["time"]
+        qty = float(t["qty"])
+        price = float(t["price"])
+        quote_qty = qty * price
+        is_buyer_maker = t["isBuyerMaker"]
 
-        key = (symbol, bucket)
-        if key not in rows:
-            rows[key] = {
+        side = "SELL" if is_buyer_maker else "BUY"
+        bucket_5m = bucketize_5m(ts)
+
+        key = bucket_5m
+        if key not in agg_map:
+            agg_map[key] = {
                 "symbol": symbol,
-                "bucket_5m": bucket.isoformat(),
+                "bucket_5m": bucket_5m.isoformat(),  # ✅ serialize safely
                 "buy_vol": 0,
                 "sell_vol": 0,
                 "delta": 0,
-                "cvd": 0,
                 "bullish_trades": 0,
                 "bearish_trades": 0,
             }
 
-        if is_buyer_maker:
-            rows[key]["sell_vol"] += qty
-            rows[key]["delta"] -= qty
-            rows[key]["bearish_trades"] += 1
+        row = agg_map[key]
+        if side == "BUY":
+            row["buy_vol"] += quote_qty
+            row["delta"] += quote_qty
+            row["bullish_trades"] += 1
         else:
-            rows[key]["buy_vol"] += qty
-            rows[key]["delta"] += qty
-            rows[key]["bullish_trades"] += 1
+            row["sell_vol"] += quote_qty
+            row["delta"] -= quote_qty
+            row["bearish_trades"] += 1
 
-        # running CVD = delta (rolling sum is handled in downstream view if needed)
-        rows[key]["cvd"] += rows[key]["delta"]
+    # CVD
+    for row in agg_map.values():
+        row["cvd"] = row["delta"]
 
-    # Upsert to Supabase
-    data = list(rows.values())
-    sb.table("binance_trades_agg_5m").upsert(data).execute()
-    print(f"Upserted {len(data)} rows for {symbol}")
+    rows = list(agg_map.values())
+    if rows:
+        sb.table("binance_trades_agg_5m").upsert(rows).execute()
+        print(f"✅ {symbol}: {len(rows)} rows into binance_trades_agg_5m")
 
 # ========= MAIN LOOP =========
 def main():
-    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later with all USDT pairs
+    symbols = get_all_usdt_symbols()   # 🔹 now pulls ALL USDT pairs dynamically
     while True:
         for sym in symbols:
             try:
                 process_trades(symbol=sym)
             except Exception as e:
                 print(f"[error] {sym}: {e}")
-        time.sleep(300)  # run every 5 minutes
+        time.sleep(60)  # fetch every 1 min
 
 if __name__ == "__main__":
     main()
+
 
 
