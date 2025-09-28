@@ -14,7 +14,6 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Symbols to track
 SYMBOLS = ["btcusdt", "ethusdt", "bnbusdt", "solusdt"]
 
-# Try lighter stream (less disconnects)
 STREAM_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
     [f"{s}@depth10@500ms" for s in SYMBOLS]
 )
@@ -27,6 +26,7 @@ async def save_batch():
     global BUFFER
     if BUFFER:
         try:
+            print(f"[save_batch] inserting {len(BUFFER)} rows... sample={BUFFER[0]}")
             sb.table("binance_orderbook").insert(BUFFER).execute()
             print(f"✅ Inserted {len(BUFFER)} rows")
         except Exception as e:
@@ -60,6 +60,8 @@ async def handle_message(symbol, data):
             "time": ts
         })
 
+    if rows:
+        print(f"[handle_message] {symbol.upper()} adding {len(rows)} rows, ts={ts}")
     BUFFER.extend(rows)
 
 
@@ -78,6 +80,9 @@ async def stream_orderbook():
                         data = json.loads(msg)
                         stream = data["stream"]
                         symbol = stream.split("@")[0]
+                        # Debug raw message for first symbol only
+                        if symbol == "btcusdt":
+                            print(f"[stream_orderbook] raw BTCUSDT snapshot: {str(data)[:200]}...")
                         await handle_message(symbol, data["data"])
                     except asyncio.TimeoutError:
                         print("⚠️ No message for 30s, sending ping...")
@@ -98,3 +103,4 @@ if __name__ == "__main__":
     loop.create_task(stream_orderbook())
     loop.create_task(scheduler())
     loop.run_forever()
+
