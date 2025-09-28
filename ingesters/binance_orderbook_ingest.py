@@ -26,18 +26,15 @@ MAX_BATCH_SIZE = 500  # adjust as needed
 async def save_batch():
     global BUFFER
     if BUFFER:
+        print(f"⚡ Preparing to insert {len(BUFFER)} rows")
         try:
-            sb.table("binance_orderbook") \
-              .upsert(
-                  BUFFER,
-                  on_conflict=["symbol", "side", "depth_level", "time"]
-              ) \
-              .execute()
-            print(f"✅ Upserted {len(BUFFER)} rows (example row: {BUFFER[0]})")
+            sb.table("binance_orderbook").insert(BUFFER).execute()
+            print(f"✅ Inserted {len(BUFFER)} rows")
         except Exception as e:
-            print(f"❌ Upsert failed: {e}")
+            print(f"❌ Insert failed: {e}")
         BUFFER = []
-
+    else:
+        print("🕒 No rows to insert this cycle")
 
 
 async def handle_message(symbol, data):
