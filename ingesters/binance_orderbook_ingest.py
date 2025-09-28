@@ -26,12 +26,17 @@ async def save_batch():
     global BUFFER
     if BUFFER:
         try:
-            print(f"[save_batch] inserting {len(BUFFER)} rows... sample={BUFFER[0]}")
-            sb.table("binance_orderbook").insert(BUFFER).execute()
-            print(f"✅ Inserted {len(BUFFER)} rows")
+            sb.table("binance_orderbook") \
+              .upsert(
+                  BUFFER,
+                  on_conflict=["symbol", "side", "depth_level", "time"]
+              ) \
+              .execute()
+            print(f"✅ Upserted {len(BUFFER)} rows (example row: {BUFFER[0]})")
         except Exception as e:
-            print(f"❌ Insert failed: {e}")
+            print(f"❌ Upsert failed: {e}")
         BUFFER = []
+
 
 
 async def handle_message(symbol, data):
