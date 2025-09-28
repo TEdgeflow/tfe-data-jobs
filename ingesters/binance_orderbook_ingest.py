@@ -21,6 +21,7 @@ STREAM_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
 BUFFER = []
 BATCH_INTERVAL = 1.0  # seconds
 
+MAX_BATCH_SIZE = 500  # adjust as needed
 
 async def save_batch():
     global BUFFER
