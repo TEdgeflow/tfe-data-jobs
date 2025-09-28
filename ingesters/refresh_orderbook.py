@@ -10,19 +10,28 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# List of orderbook views to refresh
+# list of all views to refresh
 VIEWS = [
+    "binance_orderbook_agg_min",
     "binance_orderbook_agg_5m",
     "binance_orderbook_agg_15m",
     "binance_orderbook_agg_1h",
     "binance_orderbook_agg_4h",
+    "binance_orderbook_depth_1m",
     "binance_orderbook_depth_5m",
     "binance_orderbook_depth_15m",
     "binance_orderbook_depth_1h",
     "binance_orderbook_depth_4h",
 ]
 
-for v in VIEWS:
-    print(f"[refresh_orderbook] refreshing {v}...")
-    res = sb.rpc(f"refresh_{v}").execute()
-    print(f"[refresh_orderbook] {v} done: {res}")
+def refresh_view(view):
+    print(f"[refresh_orderbook] refreshing {view}...")
+    try:
+        res = sb.rpc(f"refresh_{view}").execute()
+        print(f"[refresh_orderbook] ✅ {view} refreshed: {res}")
+    except Exception as e:
+        print(f"[refresh_orderbook] ❌ failed to refresh {view}: {e}")
+
+if __name__ == "__main__":
+    for v in VIEWS:
+        refresh_view(v)
