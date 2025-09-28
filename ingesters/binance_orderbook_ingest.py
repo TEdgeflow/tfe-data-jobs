@@ -39,8 +39,9 @@ async def save_batch():
 
 async def handle_message(symbol, data):
     global BUFFER
-    bids = data.get("bids", [])
-    asks = data.get("asks", [])
+    # Binance stream fields: "b" = bids, "a" = asks
+    bids = data.get("b", [])
+    asks = data.get("a", [])
     ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc).isoformat()
 
     rows = []
@@ -64,8 +65,9 @@ async def handle_message(symbol, data):
         })
 
     if rows:
-        print(f"[handle_message] {symbol.upper()} adding {len(rows)} rows, ts={ts}")
+        print(f"[handle_message] {symbol.upper()} → buffered {len(rows)} rows at {ts}")
     BUFFER.extend(rows)
+
 
 
 async def stream_orderbook():
