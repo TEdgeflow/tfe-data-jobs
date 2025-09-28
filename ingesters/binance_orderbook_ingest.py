@@ -11,12 +11,18 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Symbols to track
-SYMBOLS = ["btcusdt", "ethusdt", "bnbusdt", "solusdt"]
+import requests
+
+# Dynamically fetch all USDT pairs from Binance
+res = requests.get("https://api.binance.com/api/v3/exchangeInfo")
+SYMBOLS = [s["symbol"].lower() for s in res.json()["symbols"] if s["quoteAsset"] == "USDT"]
+
+print(f"✅ Loaded {len(SYMBOLS)} USDT pairs")
 
 STREAM_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
     [f"{s}@depth10@500ms" for s in SYMBOLS]
 )
+
 
 BUFFER = []
 BATCH_INTERVAL = 1.0  # seconds
