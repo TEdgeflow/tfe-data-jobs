@@ -52,7 +52,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     # Liquidations
     liq = sb.table("v_liquidation_agg") \
         .select("long_liquidations, short_liquidations") \
-        .eq("symbol", symbol).eq("timeframe", timeframe) \
+        .eq("symbol", symbol) \
         .order("last_update", desc=True).limit(1).execute()
 
     # Trades agg (volume source)
