@@ -26,11 +26,24 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     """Fetch latest factor data from Supabase views for a given symbol + timeframe"""
 
     # Example queries — adjust to your actual view/table names
-    vwap = sb.table("binance_vwap_agg").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("bucket_start", desc=True).limit(1).execute()
-    delta = sb.table("v_signal_delta").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("bucket_start", desc=True).limit(1).execute()
-    cvd = sb.table("v_signal_cvd").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("bucket_start", desc=True).limit(1).execute()
-    ob = sb.table("binance_orderbook_agg_5m").select("*").eq("symbol", symbol).order("bucket_5m", desc=True).limit(1).execute()
-    liq = sb.table("binance_liquidations").select("*").eq("symbol", symbol).order("time", desc=True).limit(10).execute()
+    vwap = sb.table("binance_vwap_agg").select("*")\
+        .eq("symbol", symbol).eq("timeframe", timeframe)\
+        .order("bucket_start", desc=True).limit(1).execute()
+
+    delta = sb.table("v_signal_delta").select("*")\
+        .eq("symbol", symbol).eq("timeframe", timeframe)\
+        .order("signal_time", desc=True).limit(1).execute()   # <-- FIXED
+
+    cvd = sb.table("v_signal_cvd").select("*")\
+        .eq("symbol", symbol).eq("timeframe", timeframe)\
+        .order("signal_time", desc=True).limit(1).execute()   # <-- likely also 'signal_time'
+
+    ob = sb.table("binance_orderbook_agg_5m").select("*")\
+        .eq("symbol", symbol).order("bucket_5m", desc=True).limit(1).execute()
+
+    liq = sb.table("binance_liquidations").select("*")\
+        .eq("symbol", symbol).order("time", desc=True).limit(10).execute()
+
 
     # Mock factor scoring (replace with actual metrics)
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0]["close_price"] else 0
