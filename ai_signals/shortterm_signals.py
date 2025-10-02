@@ -27,7 +27,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # VWAP
     vwap = sb.table("binance_vwap_agg") \
-        .select("vwap, close_price, volume_quote") \
+        .select("vwap, volume_quote") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("bucket_start", desc=True).limit(1).execute()
 
@@ -62,7 +62,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         .order("bucket_5m", desc=True).limit(1).execute()
 
     # ========= Factor Scores =========
-    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0]["close_price"] else 0
+    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] > 0 else 0
     delta_score = 1 if delta.data and delta.data[0]["net_delta"] > 0 else 0
     cvd_score = 1 if cvd.data and cvd.data[0]["cvd"] > 0 else 0
     orderbook_score = 1 if ob.data and ob.data[0]["bid_vol"] > ob.data[0]["ask_vol"] else 0
