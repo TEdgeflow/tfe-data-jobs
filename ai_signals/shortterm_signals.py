@@ -56,7 +56,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         .order("last_update", desc=True).limit(1).execute()
 
     # Trades agg (volume source)
-    trades = sb.table("binance_trade_agg_5m") \
+    trades = sb.table("binance_trades_agg_5m") \
         .select("buy_vol, sell_vol, delta, cvd") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
