@@ -13,114 +13,103 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= WEIGHTS =========
 WEIGHTS = {
-    "vwap": 0.20,
-    "delta": 0.20,
-    "cvd": 0.20,
+    "vwap_trend": 0.20,
+    "delta_trend": 0.20,
+    "cvd_alignment": 0.15,
     "orderbook": 0.15,
-    "liquidation": 0.10,
-    "volume": 0.10,
-    "inflow": 0.05,   # Only inflow available, no outflow
+    "liquidation_bias": 0.10,
+    "unlock_bias": 0.10,
+    "whale_inflow": 0.05,
+    "volume_rsi": 0.05,
 }
 
 # ========= GET DATA =========
 def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
-    """Fetch latest factor data from Supabase for daily bias signals"""
+    """
+    Fetch latest factor data from Supabase views for a given symbol + timeframe
+    Adjusted to match your table schema (no bucket_start / timestamp mismatch).
+    """
 
-    # 1. VWAP (hourly or 4h)
-    vwap = sb.table("binance_vwap_agg").select("*")\
-        .eq("symbol", symbol).eq("timeframe", timeframe)\
-        .order("bucket_start", desc=True).limit(1).execute()
+    # ---- Replace with your real views ----
+    vwap = sb.table("binance_vwap_agg").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("bucket", desc=True).limit(1).execute()
+    delta = sb.table("v_signal_delta").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("signal_time", desc=True).limit(1).execute()
+    cvd = sb.table("v_signal_cvd").select("*").eq("symbol", symbol).eq("timeframe", timeframe).order("signal_time", desc=True).limit(1).execute()
+    ob = sb.table("binance_orderbook_agg_1h").select("*").eq("symbol", symbol).order("bucket_1h", desc=True).limit(1).execute()
+    liq = sb.table("binance_liquidations").select("*").eq("symbol", symbol).order("time", desc=True).limit(20).execute()
+    unlock = sb.table("droptabs_unlocks").select("*").eq("coin_symbol", symbol).order("unlock_date", desc=True).limit(1).execute()
+    inflow = sb.table("nansen_whaleflows").select("*").eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
+    volume = sb.table("market_data").select("*").eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
 
-    # 2. Delta signals
-    delta = sb.table("v_signal_delta").select("*")\
-        .eq("symbol", symbol).eq("timeframe", timeframe)\
-        .order("signal_time", desc=True).limit(1).execute()
-
-    # 3. CVD signals
-    cvd = sb.table("v_signal_cvd").select("*")\
-        .eq("symbol", symbol).eq("timeframe", timeframe)\
-        .order("signal_time", desc=True).limit(1).execute()
-
-    # 4. Orderbook imbalance
-    ob = sb.table(f"binance_orderbook_agg_{timeframe}")\
-        .select("*").eq("symbol", symbol)\
-        .order(f"bucket_{timeframe}", desc=True).limit(1).execute()
-
-    # 5. Liquidations (bigger clusters may bias the day direction)
-    liq = sb.table("binance_liquidations").select("*")\
-        .eq("symbol", symbol).order("time", desc=True).limit(50).execute()
-
-    # 6. Volume (daily momentum bias)
-    vol = sb.table("market_data").select("*")\
-        .eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
-
-    # 7. Inflow (whales only inflow available)
-    inflow = sb.table("nansen_whaleflows").select("*")\
-        .eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
-
-    # === SCORING RULES (simplified) ===
-    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0]["close_price"] else 0
-    delta_score = 1 if delta.data and delta.data[0]["strength_value"] > 0 else 0
-    cvd_score = 1 if cvd.data and cvd.data[0]["strength_value"] > 0 else 0
-    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol"] > ob.data[0]["ask_vol"] else 0
+    # ---- Factor scoring ----
+    vwap_score = 1 if vwap.data and vwap.data[0].get("trend") == "bullish" else 0
+    delta_score = 1 if delta.data and delta.data[0].get("strength_value", 0) > 0 else 0
+    cvd_score = 1 if cvd.data and cvd.data[0].get("cvd", 0) > 0 else 0
+    orderbook_score = 1 if ob.data and ob.data[0].get("bid_vol", 0) > ob.data[0].get("ask_vol", 0) else 0
     liquidation_score = 1 if liq.data and len(liq.data) > 10 else 0
-    volume_score = 1 if vol.data and vol.data[0]["volume_usd"] > 5_000_000 else 0
-    inflow_score = 1 if inflow.data and inflow.data[0]["inflow_usd"] > 500_000 else 0
+    unlock_score = 1 if unlock.data and unlock.data[0].get("days_until_unlock", 999) < 30 else 0
+    inflow_score = 1 if inflow.data and inflow.data[0].get("inflow_usd", 0) > 1000000 else 0
+    volume_score = 1 if volume.data and volume.data[0].get("volume_usd", 0) > 5000000 else 0
 
     return {
         "symbol": symbol,
-        "timeframe": timeframe,
-        "vwap_score": vwap_score,
-        "delta_score": delta_score,
-        "cvd_score": cvd_score,
+        "signal_date": datetime.now(timezone.utc).date().isoformat(),
+        "vwap_trend_score": vwap_score,
+        "delta_trend_score": delta_score,
+        "cvd_alignment_score": cvd_score,
         "orderbook_score": orderbook_score,
-        "liquidation_score": liquidation_score,
-        "volume_score": volume_score,
-        "inflow_score": inflow_score,
+        "liquidation_bias_score": liquidation_score,
+        "unlock_bias_score": unlock_score,
+        "whale_inflow_score": inflow_score,
+        "volume_rsi_score": volume_score,
     }
 
 # ========= SCORING =========
 def calculate_confidence(scores):
     total = sum(
-        scores[f] * WEIGHTS[f]
-        for f in WEIGHTS.keys()
+        scores[f"{factor}_score"] * WEIGHTS[factor]
+        for factor in ["vwap_trend","delta_trend","cvd_alignment","orderbook","liquidation_bias","unlock_bias","whale_inflow","volume_rsi"]
     )
     return round(total * 100, 2)
 
-def get_direction(scores):
-    bullish = scores["vwap_score"] + scores["delta_score"] + scores["cvd_score"] + scores["orderbook_score"] + scores["inflow_score"]
-    bearish = len(WEIGHTS) - bullish
-    return "LONG" if bullish >= bearish else "SHORT"
+def get_bias(scores):
+    bullish = (
+        scores["vwap_trend_score"] +
+        scores["delta_trend_score"] +
+        scores["cvd_alignment_score"] +
+        scores["orderbook_score"]
+    )
+    bearish = 8 - bullish
+    return "BULLISH" if bullish >= bearish else "BEARISH"
 
 # ========= INSERT =========
-def insert_signal(symbol, timeframe, scores):
+def insert_daybias(symbol, timeframe, scores):
     confidence = calculate_confidence(scores)
-    direction = get_direction(scores)
+    bias = get_bias(scores)
 
     row = {
         "symbol": symbol,
-        "timeframe": timeframe,
-        "vwap_score": scores["vwap_score"],
-        "delta_score": scores["delta_score"],
-        "cvd_score": scores["cvd_score"],
+        "signal_date": scores["signal_date"],
+        "vwap_trend_score": scores["vwap_trend_score"],
+        "delta_trend_score": scores["delta_trend_score"],
+        "cvd_alignment_score": scores["cvd_alignment_score"],
         "orderbook_score": scores["orderbook_score"],
-        "liquidation_score": scores["liquidation_score"],
-        "volume_score": scores["volume_score"],
-        "inflow_score": scores["inflow_score"],
+        "liquidation_bias_score": scores["liquidation_bias_score"],
+        "unlock_bias_score": scores["unlock_bias_score"],
+        "whale_inflow_score": scores["whale_inflow_score"],
+        "volume_rsi_score": scores["volume_rsi_score"],
         "confidence_score": confidence,
-        "direction": direction,
+        "bias": bias,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     res = sb.table("ai_signals_daybias").insert(row).execute()
-    print(f"[daybias_signal] {symbol} {timeframe} {direction} {confidence}%")
+    print(f"[daybias_signal] {symbol} {timeframe} {bias} {confidence}%")
     return res
 
 # ========= MAIN =========
 if __name__ == "__main__":
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # extend to top tokens
+    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
     for s in symbols:
         scores = get_daybias_inputs(s, timeframe="1h")
-        insert_signal(s, "1h", scores)
-        scores = get_daybias_inputs(s, timeframe="4h")
-        insert_signal(s, "4h", scores)
+        insert_daybias(s, "1h", scores)
+
