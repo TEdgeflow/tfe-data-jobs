@@ -59,7 +59,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     trades = sb.table("binance_trade_agg_5m") \
         .select("buy_vol, sell_vol, delta, cvd") \
         .eq("symbol", symbol) \
-        .order("bucket_5mins", desc=True).limit(1).execute()
+        .order("bucket_5m", desc=True).limit(1).execute()
 
     # ========= Factor Scores =========
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] > 0 else 0
