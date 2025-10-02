@@ -42,7 +42,10 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     vwap_score = 1 if vwap.data and "vwap" in vwap.data[0] and vwap.data[0]["vwap"] < vwap.data[0].get("close_price", 999999) else 0
     delta_score = 1 if delta.data and "strength_value" in delta.data[0] and delta.data[0]["strength_value"] > 0 else 0
     cvd_score = 1 if cvd.data and "strength_value" in cvd.data[0] and cvd.data[0]["strength_value"] > 0 else 0
-    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol"] > ob.data[0]["ask_vol"] else 0
+   orderbook_score = (
+    1 if ob.data and ob.data[0]["bid_vol10"] > ob.data[0]["ask_vol10"] else 0
+)
+
     liquidation_score = 1 if liq.data and len(liq.data) > 3 else 0
     volume_score = 1 if vwap.data and "volume_quote" in vwap.data[0] and vwap.data[0]["volume_quote"] > 1000000 else 0
 
