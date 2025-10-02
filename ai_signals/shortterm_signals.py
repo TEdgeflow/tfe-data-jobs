@@ -57,7 +57,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # Trades agg (volume source)
     trades = sb.table("binance_trade_agg_5m") \
-        .select("buy_vol, sell_vol") \
+        .select("buy_vol, sell_vol, delta, cvd") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
@@ -70,7 +70,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     volume_score = 1 if trades.data and (
     (trades.data[0]["buy_vol"] + trades.data[0]["sell_vol"]) > 1_000_000
 ) else 0
-
+    
     return {
         "symbol": symbol,
         "timeframe": timeframe,
