@@ -45,7 +45,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # Orderbook agg
     ob = sb.table("binance_orderbook_agg_5m") \
-        .select("bid_vol, ask_vol") \
+        .select("bid_vol10, ask_vol10") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
@@ -65,7 +65,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] > 0 else 0
     delta_score = 1 if delta.data and delta.data[0]["net_delta"] > 0 else 0
     cvd_score = 1 if cvd.data and cvd.data[0]["cvd"] > 0 else 0
-    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol"] > ob.data[0]["ask_vol"] else 0
+    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol10"] > ob.data[0]["ask_vol10"] else 0
     liquidation_score = 1 if liq.data and liq.data[0]["long_liq"] > liq.data[0]["short_liq"] else 0
     volume_score = 1 if trades.data and trades.data[0]["total_volume"] > 1_000_000 else 0
 
