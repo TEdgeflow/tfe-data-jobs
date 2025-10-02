@@ -33,7 +33,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # Delta
     delta = sb.table("v_signal_delta") \
-        .select("net_delta") \
+        .select("strength_value") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
