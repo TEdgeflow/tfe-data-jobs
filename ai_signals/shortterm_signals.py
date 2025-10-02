@@ -39,7 +39,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # CVD
     cvd = sb.table("v_signal_cvd") \
-        .select("cvd") \
+        .select("strength_value") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
@@ -57,17 +57,19 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # Trades agg (volume source)
     trades = sb.table("binance_trade_agg_5m") \
-        .select("total_volume") \
+        .select("buy_vol, sell_vol") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
     # ========= Factor Scores =========
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] > 0 else 0
-    delta_score = 1 if delta.data and delta.data[0]["net_delta"] > 0 else 0
-    cvd_score = 1 if cvd.data and cvd.data[0]["cvd"] > 0 else 0
+    delta_score = 1 if delta.data and delta.data[0]["strength_value"] > 0 else 0
+    cvd_score = 1 if cvd.data and cvd.data[0]["strength_value"] > 0 else 0
     orderbook_score = 1 if ob.data and ob.data[0]["bid_vol10"] > ob.data[0]["ask_vol10"] else 0
     liquidation_score = 1 if liq.data and liq.data[0]["long_liq"] > liq.data[0]["short_liq"] else 0
-    volume_score = 1 if trades.data and trades.data[0]["total_volume"] > 1_000_000 else 0
+    volume_score = 1 if trades.data and (
+    (trades.data[0]["buy_vol"] + trades.data[0]["sell_vol"]) > 1_000_000
+) else 0
 
     return {
         "symbol": symbol,
