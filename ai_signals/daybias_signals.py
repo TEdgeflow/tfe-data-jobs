@@ -23,6 +23,17 @@ WEIGHTS = {
     "unlock_risk": 0.10,
 }
 
+def normalize_symbol(symbol: str, target: str) -> str:
+    """
+    Convert a Binance symbol (BTCUSDT) to the correct format for different tables.
+    """
+    if target == "nansen_whaleflows":
+        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
+    elif target == "v_droptabs_unlocks":
+        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
+    else:
+        return symbol   # keep as-is for Binance tables
+
 # ========= GET DATA =========
 def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
     vwap = sb.table("binance_vwap_agg").select("*") \
@@ -37,19 +48,25 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
+    # Binance orderbook
     ob = sb.table("binance_orderbook_agg_1h").select("*") \
-        .eq("symbol", symbol).order("bucket_1h", desc=True).limit(1).execute()
+        .eq("symbol", normalize_symbol(symbol, "binance_orderbook_agg_1h")) \
+        .order("bucket_1h", desc=True).limit(1).execute()
 
+    # Liquidations
     liq = sb.table("v_liquidation_agg").select("*") \
-        .eq("symbol", symbol).order("last_update", desc=True).limit(1).execute()
+        .eq("symbol", normalize_symbol(symbol, "v_liquidation_agg")) \
+        .order("last_update", desc=True).limit(1).execute()
 
-    # ✅ FIXED: nansen whale inflow (use token + ts, strip USDT suffix)
+    # Whale inflows (Nansen)
     inflow = sb.table("nansen_whaleflows").select("*") \
-        .eq("token", symbol.replace("USDT", "")) \
+        .eq("token", normalize_symbol(symbol, "nansen_whaleflows")) \
         .order("ts", desc=True).limit(1).execute()
 
-    unlock = sb.table("v_unlock_risk_proxy").select("*") \
-        .eq("symbol", symbol).limit(1).execute()
+    # Unlocks (Droptabs)
+    unlock = sb.table("v_droptabs_unlocks").select("*") \
+        .eq("coin_symbol", normalize_symbol(symbol, "v_droptabs_unlocks")) \
+        .limit(1).execute()
 
     # ========= SCORES =========
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0].get("close_price", 0) else 0
@@ -59,7 +76,7 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
     liquidation_score = 1 if liq.data and liq.data[0]["long_liquidations"] > liq.data[0]["short_liquidations"] else 0
     volume_score = 1 if vwap.data and vwap.data[0]["volume_quote"] > 5_000_000 else 0
     inflow_score = 1 if inflow.data and inflow.data[0]["inflow_usd"] > 100_000 else 0
-    unlock_score = 1 if unlock.data and unlock.data[0].get("risk_level") == "High" else 0
+    unlock_score = 1 if unlock.data and unlock.data[0]["days_until_unlock"] <= 30 else 0
 
     return {
         "symbol": symbol,
@@ -73,6 +90,7 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         "whale_inflow_score": inflow_score,
         "unlock_risk_score": unlock_score,
     }
+
 
 
     # Scores
