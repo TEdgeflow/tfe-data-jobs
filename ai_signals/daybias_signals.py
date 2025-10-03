@@ -121,14 +121,14 @@ def insert_signal(symbol, scores, vwap=None, delta=None, cvd=None):
 
     row = {
         "symbol": symbol,
-        "vwap_score": scores.get("vwap_score", 0),
-        "delta_score": scores.get("delta_score", 0),
-        "cvd_score": scores.get("cvd_score", 0),
+        "vwap_trend_score": scores.get("vwap_score", 0),
+        "delta_trend_score": scores.get("delta_score", 0),
+        "cvd_alignment_score": scores.get("cvd_score", 0),
         "orderbook_score": scores.get("orderbook_score", 0),
-        "liquidation_score": scores.get("liquidation_score", 0),
-        "volume_score": scores.get("volume_score", 0),
+        "liquidation_bias_score": scores.get("liquidation_score", 0),
+        "volume_rsi_score": scores.get("volume_score", 0),
         "whale_inflow_score": scores.get("whale_inflow_score", 0),
-        "unlock_risk_score": scores.get("unlock_risk_score", 0),
+        "unlock_bias_score": scores.get("unlock_risk_score", 0),
         "confidence_score": confidence,
         "bias": direction,
         "signal_date": signal_date,   # ✅ required by schema
@@ -137,6 +137,8 @@ def insert_signal(symbol, scores, vwap=None, delta=None, cvd=None):
 
     sb.table("ai_signals_daybias").insert(row).execute()
     print(f"[daybias_signal] {symbol} {direction} {confidence}% (date={signal_date})")
+
+
 
 # ========= MAIN =========
 if __name__ == "__main__":
