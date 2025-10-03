@@ -31,7 +31,7 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
 
     delta = sb.table("v_signal_delta").select("*") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
-        .order("bucket_start", desc=True).limit(1).execute()
+        .order("signal_time", desc=True).limit(1).execute()
 
     cvd = sb.table("v_signal_cvd").select("*") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
