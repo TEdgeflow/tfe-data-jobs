@@ -143,7 +143,6 @@ def insert_signal(symbol, timeframe, scores):
 
     row = {
         "symbol": symbol,
-        "timeframe": timeframe,   # optional, only if you added this column
         "vwap_score": scores.get("vwap_score", 0),
         "delta_score": scores.get("delta_score", 0),
         "cvd_score": scores.get("cvd_score", 0),
