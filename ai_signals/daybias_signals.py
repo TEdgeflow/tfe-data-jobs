@@ -35,13 +35,13 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
 
     cvd = sb.table("v_signal_cvd").select("*") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
-        .order("bucket_start", desc=True).limit(1).execute()
+        .order("signal_time", desc=True).limit(1).execute()
 
     ob = sb.table("binance_orderbook_agg_1h").select("*") \
         .eq("symbol", symbol).order("bucket_1h", desc=True).limit(1).execute()
 
-    liq = sb.table("binance_liquidations").select("*") \
-        .eq("symbol", symbol).order("time", desc=True).limit(20).execute()
+    liq = sb.table("v_liquidation_agg").select("*") \
+        .eq("symbol", symbol).order("last_update", desc=True).limit(1).execute()
 
     inflow = sb.table("nansen_whaleflows").select("*") \
         .eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
@@ -50,14 +50,14 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         .eq("symbol", symbol).limit(1).execute()
 
     # Scores
-    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0]["close_price"] else 0
-    delta_score = 1 if delta.data and delta.data[0]["net_delta"] > 0 else 0
-    cvd_score = 1 if cvd.data and cvd.data[0]["cvd"] > 0 else 0
-    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol"] > ob.data[0]["ask_vol"] else 0
-    liquidation_score = 1 if liq.data and len(liq.data) > 5 else 0
-    volume_score = 1 if vwap.data and vwap.data[0]["volume_quote"] > 5000000 else 0
-    inflow_score = 1 if inflow.data and inflow.data[0]["inflow_usd"] > 100000 else 0
-    unlock_score = 1 if unlock.data and "High" in unlock.data[0]["risk_level"] else 0
+    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0].get("close_price", 0) else 0
+    delta_score = 1 if delta.data and delta.data[0]["strength_value"] > 0 else 0
+    cvd_score = 1 if cvd.data and cvd.data[0]["strength_value"] > 0 else 0
+    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol10"] > ob.data[0]["ask_vol10"] else 0
+    liquidation_score = 1 if liq.data and liq.data[0]["long_liquidations"] > liq.data[0]["short_liquidations"] else 0
+    volume_score = 1 if vwap.data and vwap.data[0]["volume_quote"] > 5_000_000 else 0
+    inflow_score = 1 if inflow.data and inflow.data[0]["inflow_usd"] > 100_000 else 0
+    unlock_score = 1 if unlock.data and unlock.data[0].get("risk_level") == "High" else 0
 
     return {
         "symbol": symbol,
@@ -74,12 +74,22 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
 
 # ========= SCORING =========
 def calculate_confidence(scores):
-    total = sum(scores[f] * WEIGHTS[f] for f in WEIGHTS)
+    mapping = {
+        "vwap_score": "vwap",
+        "delta_score": "delta",
+        "cvd_score": "cvd",
+        "orderbook_score": "orderbook",
+        "liquidation_score": "liquidation",
+        "volume_score": "volume",
+        "whale_inflow_score": "whale_inflow",
+        "unlock_risk_score": "unlock_risk"
+    }
+    total = sum(scores[k] * WEIGHTS[mapping[k]] for k in mapping)
     return round(total * 100, 2)
 
 def get_direction(scores):
     bullish = scores["vwap_score"] + scores["delta_score"] + scores["cvd_score"] + scores["orderbook_score"]
-    bearish = 6 - bullish
+    bearish = scores["liquidation_score"] + scores["volume_score"]
     return "LONG" if bullish >= bearish else "SHORT"
 
 # ========= INSERT =========
@@ -112,6 +122,7 @@ if __name__ == "__main__":
     for s in symbols:
         scores = get_daybias_inputs(s, timeframe="1h")
         insert_signal(s, "1h", scores)
+
 
 
 
