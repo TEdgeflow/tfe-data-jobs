@@ -114,7 +114,7 @@ def insert_signal(symbol, timeframe, scores, trades):
         "orderbook_score": scores.get("orderbook_score", 0),
         "liquidation_score": scores.get("liquidation_score", 0),
         "volume_score": scores.get("volume_score", 0),
-        "confidence_score": confidence_score,
+        "confidence_score": calculate_confidence(scores),
     "direction": get_direction(scores)   # <--- now inside the dict
 }
 
