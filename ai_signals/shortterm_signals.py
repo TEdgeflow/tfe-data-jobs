@@ -13,13 +13,19 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= WEIGHTS =========
 WEIGHTS = {
-    "vwap": 0.20,
-    "delta": 0.20,
-    "cvd": 0.20,
-    "orderbook": 0.15,
-    "liquidation": 0.15,
-    "volume": 0.10,
+    "vwap_score": 0.20,
+    "delta_score": 0.20,
+    "cvd_score": 0.20,
+    "orderbook_score": 0.15,
+    "liquidation_score": 0.15,
+    "volume_score": 0.10,
 }
+
+# ========= SCORING =========
+def calculate_confidence(scores):
+    total = sum(scores[f] * WEIGHTS[f] for f in WEIGHTS)
+    return round(total * 100, 2)
+
 
 # ========= SYMBOL NORMALIZATION =========
 def normalize_symbol(symbol: str, target: str) -> str:
