@@ -37,7 +37,7 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
-       ob = sb.table("binance_orderbook_agg_1h").select("*") \
+    ob = sb.table("binance_orderbook_agg_1h").select("*") \
         .eq("symbol", symbol).order("bucket_1h", desc=True).limit(1).execute()
 
     liq = sb.table("v_liquidation_agg").select("*") \
@@ -50,6 +50,29 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
 
     unlock = sb.table("v_unlock_risk_proxy").select("*") \
         .eq("symbol", symbol).limit(1).execute()
+
+    # ========= SCORES =========
+    vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0].get("close_price", 0) else 0
+    delta_score = 1 if delta.data and delta.data[0]["strength_value"] > 0 else 0
+    cvd_score = 1 if cvd.data and cvd.data[0]["strength_value"] > 0 else 0
+    orderbook_score = 1 if ob.data and ob.data[0]["bid_vol10"] > ob.data[0]["ask_vol10"] else 0
+    liquidation_score = 1 if liq.data and liq.data[0]["long_liquidations"] > liq.data[0]["short_liquidations"] else 0
+    volume_score = 1 if vwap.data and vwap.data[0]["volume_quote"] > 5_000_000 else 0
+    inflow_score = 1 if inflow.data and inflow.data[0]["inflow_usd"] > 100_000 else 0
+    unlock_score = 1 if unlock.data and unlock.data[0].get("risk_level") == "High" else 0
+
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "vwap_score": vwap_score,
+        "delta_score": delta_score,
+        "cvd_score": cvd_score,
+        "orderbook_score": orderbook_score,
+        "liquidation_score": liquidation_score,
+        "volume_score": volume_score,
+        "whale_inflow_score": inflow_score,
+        "unlock_risk_score": unlock_score,
+    }
 
 
     # Scores
