@@ -114,7 +114,6 @@ def insert_signal(symbol, timeframe, scores, trades):
         "orderbook_score": scores.get("orderbook_score", 0),
         "liquidation_score": scores.get("liquidation_score", 0),
         "volume_score": scores.get("volume_score", 0),
-        "final_score": scores.get("final_score", 0),
         "direction": scores.get("direction", "NEUTRAL")
     }
 
