@@ -114,8 +114,10 @@ def insert_signal(symbol, timeframe, scores, trades):
         "orderbook_score": scores.get("orderbook_score", 0),
         "liquidation_score": scores.get("liquidation_score", 0),
         "volume_score": scores.get("volume_score", 0),
-        "direction": scores.get("direction", "NEUTRAL")
-    }
+        "confidence_score": confidence_score,
+    "direction": get_direction(scores)   # <--- now inside the dict
+}
+
 
     res = sb.table("ai_signals_shortterm").insert(row).execute()
     return res
