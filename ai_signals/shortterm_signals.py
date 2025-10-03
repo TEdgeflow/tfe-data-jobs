@@ -99,27 +99,32 @@ def get_direction(scores):
     return "LONG" if bullish >= bearish else "SHORT"
 
 # ========= INSERT =========
-def insert_signal(symbol, timeframe, scores):
-    confidence = calculate_confidence(scores)
-    direction = get_direction(scores)
+def insert_signal(symbol, timeframe, scores, trades):
+    # use bucket_xx time as the signal_time
+    signal_time = None
+    if trades.data and "bucket_5m" in trades.data[0]:
+        signal_time = trades.data[0]["bucket_5m"]
+    elif trades.data and "bucket_15m" in trades.data[0]:
+        signal_time = trades.data[0]["bucket_15m"]
+    elif trades.data and "bucket_1h" in trades.data[0]:
+        signal_time = trades.data[0]["bucket_1h"]
 
     row = {
         "symbol": symbol,
         "timeframe": timeframe,
-        "vwap_score": scores["vwap_score"],
-        "delta_score": scores["delta_score"],
-        "cvd_score": scores["cvd_score"],
-        "orderbook_score": scores["orderbook_score"],
-        "liquidation_score": scores["liquidation_score"],
-        "volume_score": scores["volume_score"],
-        "confidence_score": confidence,
-        "direction": direction,
-        "signal_time": datetime.now(timezone.utc).isoformat(),
+        "signal_time": signal_time,
+        "vwap_score": scores.get("vwap_score", 0),
+        "delta_score": scores.get("delta_score", 0),
+        "cvd_score": scores.get("cvd_score", 0),
+        "orderbook_score": scores.get("orderbook_score", 0),
+        "liquidation_score": scores.get("liquidation_score", 0),
+        "volume_score": scores.get("volume_score", 0),
+        "final_score": scores.get("final_score", 0)
     }
 
     res = sb.table("ai_signals_shortterm").insert(row).execute()
-    print(f"[shortterm_signal] {symbol} {timeframe} {direction} {confidence}%")
     return res
+
 
 # ========= MAIN =========
 if __name__ == "__main__":
