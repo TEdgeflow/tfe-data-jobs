@@ -22,54 +22,42 @@ WEIGHTS = {
 }
 
 def normalize_symbol(symbol: str, target: str) -> str:
-    """
-    Convert a Binance symbol (BTCUSDT) to the correct format for different tables.
-    """
-    if target == "nansen_whaleflows":
+    """Convert a Binance symbol (BTCUSDT) to the correct format for different tables."""
+    if target in ["nansen_whaleflows", "v_droptabs_unlocks"]:
         return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
-    elif target == "v_droptabs_unlocks":
-        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
-    else:
-        return symbol   # keep as-is for Binance tables
-
+    return symbol   # keep as-is for Binance tables
 
 def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     """Fetch latest factor data from Supabase views for a given symbol + timeframe"""
 
-    # VWAP
     vwap = sb.table("binance_vwap_agg") \
         .select("vwap, volume_quote, bucket_start") \
         .eq("symbol", normalize_symbol(symbol, "binance_vwap_agg")) \
         .eq("timeframe", timeframe) \
         .order("bucket_start", desc=True).limit(1).execute()
 
-    # Delta
     delta = sb.table("v_signal_delta") \
         .select("strength_value, signal_time") \
         .eq("symbol", normalize_symbol(symbol, "v_signal_delta")) \
         .eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
-    # CVD
     cvd = sb.table("v_signal_cvd") \
         .select("strength_value, signal_time") \
         .eq("symbol", normalize_symbol(symbol, "v_signal_cvd")) \
         .eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
-    # Orderbook agg
     ob = sb.table("binance_orderbook_agg_5m") \
         .select("bid_vol10, ask_vol10, bucket_5m") \
         .eq("symbol", normalize_symbol(symbol, "binance_orderbook_agg_5m")) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
-    # Liquidations
     liq = sb.table("v_liquidation_agg") \
         .select("long_liquidations, short_liquidations, last_update") \
         .eq("symbol", normalize_symbol(symbol, "v_liquidation_agg")) \
         .order("last_update", desc=True).limit(1).execute()
 
-    # Trades agg (volume source)
     trades = sb.table("binance_trades_agg_5m") \
         .select("bucket_5m, buy_vol, sell_vol, delta, cvd") \
         .eq("symbol", normalize_symbol(symbol, "binance_trades_agg_5m")) \
@@ -94,58 +82,41 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         "volume_score": volume_score,
     }, trades
 
-
-# ========= SCORING =========
 def calculate_confidence(scores):
-    total = sum(
-        scores[f"{f}_score"] * WEIGHTS[f]
-        for f in WEIGHTS
-    )
+    total = sum(scores[f"{f}_score"] * WEIGHTS[f] for f in WEIGHTS)
     return round(total * 100, 2)
 
 def get_direction(scores):
     positive = scores["vwap_score"] + scores["delta_score"] + scores["cvd_score"] + scores["orderbook_score"]
     negative = scores["liquidation_score"] + scores["volume_score"]
-    return "LONG" if positive >= negative else "SHORT"
+    return "BULLISH" if positive >= negative else "BEARISH"
 
-# ========= INSERT =========
 def insert_signal(symbol, timeframe, scores, trades):
-    # use bucket_xx time as the signal_time
     signal_time = None
     if trades.data and "bucket_5m" in trades.data[0]:
         signal_time = trades.data[0]["bucket_5m"]
-    elif trades.data and "bucket_15m" in trades.data[0]:
-        signal_time = trades.data[0]["bucket_15m"]
-    elif trades.data and "bucket_1h" in trades.data[0]:
-        signal_time = trades.data[0]["bucket_1h"]
 
     row = {
         "symbol": symbol,
         "timeframe": timeframe,
         "signal_time": signal_time,
-        "vwap_score": scores.get("vwap_score", 0),
-        "delta_score": scores.get("delta_score", 0),
         "cvd_score": scores.get("cvd_score", 0),
         "orderbook_score": scores.get("orderbook_score", 0),
         "liquidation_score": scores.get("liquidation_score", 0),
         "volume_score": scores.get("volume_score", 0),
         "confidence_score": calculate_confidence(scores),
-    "direction": get_direction(scores)   # <--- now inside the dict
-}
+        "direction": get_direction(scores),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
+    return sb.table("ai_signals_shortterm").insert(row).execute()
 
-    res = sb.table("ai_signals_shortterm").insert(row).execute()
-    return res
-
-
-# ========= MAIN =========
 if __name__ == "__main__":
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # extend later
+    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
     for s in symbols:
         scores, trades = get_latest_signal_inputs(s, timeframe="5m")
-        scores["final_score"] = calculate_confidence(scores)
-        scores["direction"] = get_direction(scores)
         insert_signal(s, "5m", scores, trades)
+
 
 
 
