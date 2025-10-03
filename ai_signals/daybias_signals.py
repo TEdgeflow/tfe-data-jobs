@@ -131,7 +131,7 @@ def insert_signal(symbol, scores, vwap=None, delta=None, cvd=None):
         "unlock_risk_score": scores.get("unlock_risk_score", 0),
         "confidence_score": confidence,
         "bias": direction,
-        "signal_date": signal_date,   # ✅ required column
+        "signal_date": signal_date,   # ✅ required by schema
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -140,10 +140,16 @@ def insert_signal(symbol, scores, vwap=None, delta=None, cvd=None):
 
 # ========= MAIN =========
 if __name__ == "__main__":
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-    for s in symbols:
+    # get all distinct symbols from vwap table
+    symbols_resp = sb.table("binance_vwap_agg").select("symbol").execute()
+    all_symbols = sorted({row["symbol"] for row in symbols_resp.data if "symbol" in row})
+
+    print(f"Processing {len(all_symbols)} symbols...")
+
+    for s in all_symbols:
         scores, vwap, delta, cvd = get_daybias_inputs(s, timeframe="1h")
         insert_signal(s, scores, vwap=vwap, delta=delta, cvd=cvd)
+
 
 
 
