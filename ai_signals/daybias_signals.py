@@ -44,7 +44,8 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         .eq("symbol", symbol).order("last_update", desc=True).limit(1).execute()
 
    # ✅ FIXED: nansen whale inflow (use token + ts, strip USDT suffix)
-inflow = sb.table("nansen_whaleflows").select("*") \
+
+   inflow = sb.table("nansen_whaleflows").select("*") \
     .eq("token", symbol.replace("USDT", "")) \
     .order("ts", desc=True).limit(1).execute()
 
