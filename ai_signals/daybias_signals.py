@@ -141,21 +141,22 @@ def insert_signal(symbol, timeframe, scores):
     confidence = calculate_confidence(scores)
     direction = get_direction(scores)
 
-    row = {
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "vwap_score": scores["vwap_score"],
-        "delta_score": scores["delta_score"],
-        "cvd_score": scores["cvd_score"],
-        "orderbook_score": scores["orderbook_score"],
-        "liquidation_score": scores["liquidation_score"],
-        "volume_score": scores["volume_score"],
-        "whale_inflow_score": scores["whale_inflow_score"],
-        "unlock_risk_score": scores["unlock_risk_score"],
-        "confidence_score": confidence,
-        "direction": direction,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+row = {
+    "symbol": symbol,
+    "timeframe": timeframe,
+    "vwap_score": scores["vwap_score"],
+    "delta_score": scores["delta_score"],
+    "cvd_score": scores["cvd_score"],
+    "orderbook_score": scores["orderbook_score"],
+    "liquidation_score": scores["liquidation_score"],
+    "volume_score": scores["volume_score"],
+    "whale_inflow_score": scores["whale_inflow_score"],
+    "unlock_risk_score": scores["unlock_risk_score"],
+    "confidence_score": confidence,
+    "bias": direction,   # ⚡ update here
+    "created_at": datetime.now(timezone.utc).isoformat(),
+}
+
 
     sb.table("ai_signals_daybias").insert(row).execute()
     print(f"[daybias_signal] {symbol} {timeframe} {direction} {confidence}%")
