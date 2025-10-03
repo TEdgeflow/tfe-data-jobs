@@ -43,8 +43,10 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
     liq = sb.table("v_liquidation_agg").select("*") \
         .eq("symbol", symbol).order("last_update", desc=True).limit(1).execute()
 
-    inflow = sb.table("nansen_whaleflows").select("*") \
-        .eq("symbol", symbol).order("timestamp", desc=True).limit(1).execute()
+   # ✅ FIXED: nansen whale inflow (use token + ts, strip USDT suffix)
+inflow = sb.table("nansen_whaleflows").select("*") \
+    .eq("token", symbol.replace("USDT", "")) \
+    .order("ts", desc=True).limit(1).execute()
 
     unlock = sb.table("v_unlock_risk_proxy").select("*") \
         .eq("symbol", symbol).limit(1).execute()
