@@ -141,22 +141,21 @@ def insert_signal(symbol, timeframe, scores):
     confidence = calculate_confidence(scores)
     direction = get_direction(scores)
 
-row = {
-    "symbol": symbol,
-    "timeframe": timeframe,
-    "vwap_score": scores["vwap_score"],
-    "delta_score": scores["delta_score"],
-    "cvd_score": scores["cvd_score"],
-    "orderbook_score": scores["orderbook_score"],
-    "liquidation_score": scores["liquidation_score"],
-    "volume_score": scores["volume_score"],
-    "whale_inflow_score": scores["whale_inflow_score"],
-    "unlock_risk_score": scores["unlock_risk_score"],
-    "confidence_score": confidence,
-    "bias": direction,   # ⚡ update here
-    "created_at": datetime.now(timezone.utc).isoformat(),
-}
-
+    row = {
+        "symbol": symbol,
+        "timeframe": timeframe,   # optional, only if you added this column
+        "vwap_score": scores.get("vwap_score", 0),
+        "delta_score": scores.get("delta_score", 0),
+        "cvd_score": scores.get("cvd_score", 0),
+        "orderbook_score": scores.get("orderbook_score", 0),
+        "liquidation_score": scores.get("liquidation_score", 0),
+        "volume_score": scores.get("volume_score", 0),
+        "whale_inflow_score": scores.get("whale_inflow_score", 0),
+        "unlock_risk_score": scores.get("unlock_risk_score", 0),
+        "confidence_score": confidence,
+        "bias": direction,   # ✅ use bias instead of direction
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
     sb.table("ai_signals_daybias").insert(row).execute()
     print(f"[daybias_signal] {symbol} {timeframe} {direction} {confidence}%")
