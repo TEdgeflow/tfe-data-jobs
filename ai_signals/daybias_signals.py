@@ -37,20 +37,20 @@ def get_daybias_inputs(symbol: str, timeframe: str = "1h"):
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
-    ob = sb.table("binance_orderbook_agg_1h").select("*") \
+       ob = sb.table("binance_orderbook_agg_1h").select("*") \
         .eq("symbol", symbol).order("bucket_1h", desc=True).limit(1).execute()
 
     liq = sb.table("v_liquidation_agg").select("*") \
         .eq("symbol", symbol).order("last_update", desc=True).limit(1).execute()
 
-   # ✅ FIXED: nansen whale inflow (use token + ts, strip USDT suffix)
-
-   inflow = sb.table("nansen_whaleflows").select("*") \
-    .eq("token", symbol.replace("USDT", "")) \
-    .order("ts", desc=True).limit(1).execute()
+    # ✅ FIXED: nansen whale inflow (use token + ts, strip USDT suffix)
+    inflow = sb.table("nansen_whaleflows").select("*") \
+        .eq("token", symbol.replace("USDT", "")) \
+        .order("ts", desc=True).limit(1).execute()
 
     unlock = sb.table("v_unlock_risk_proxy").select("*") \
         .eq("symbol", symbol).limit(1).execute()
+
 
     # Scores
     vwap_score = 1 if vwap.data and vwap.data[0]["vwap"] < vwap.data[0].get("close_price", 0) else 0
