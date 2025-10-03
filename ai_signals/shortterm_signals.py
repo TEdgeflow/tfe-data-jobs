@@ -21,12 +21,23 @@ WEIGHTS = {
     "volume": 0.10,
 }
 
+# ========= SYMBOL NORMALIZATION =========
 def normalize_symbol(symbol: str, target: str) -> str:
-    """Convert a Binance symbol (BTCUSDT) to the correct format for different tables."""
+    """Convert Binance symbol (BTCUSDT) to correct format for each table."""
+    base = symbol.replace("USDT", "")  # BTC, ETH, SOL
     if target in ["nansen_whaleflows", "v_droptabs_unlocks"]:
-        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
-    return symbol   # keep as-is for Binance tables
+        return base
+    return symbol  # keep as-is for Binance tables
 
+# ========= GET SYMBOLS =========
+def get_all_symbols():
+    """Fetch all distinct Binance symbols from Supabase."""
+    res = sb.table("binance_vwap_agg").select("symbol").limit(5000).execute()
+    symbols = list({row["symbol"] for row in res.data if "USDT" in row["symbol"]})
+    print(f"[INFO] Loaded {len(symbols)} symbols")
+    return symbols
+
+# ========= SIGNAL INPUTS =========
 def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     """Fetch latest factor data from Supabase views for a given symbol + timeframe"""
 
@@ -82,6 +93,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         "volume_score": volume_score,
     }, trades
 
+# ========= SCORING =========
 def calculate_confidence(scores):
     total = sum(scores[f"{f}_score"] * WEIGHTS[f] for f in WEIGHTS)
     return round(total * 100, 2)
@@ -91,10 +103,9 @@ def get_direction(scores):
     negative = scores["liquidation_score"] + scores["volume_score"]
     return "BULLISH" if positive >= negative else "BEARISH"
 
+# ========= INSERT =========
 def insert_signal(symbol, timeframe, scores, trades):
-    signal_time = None
-    if trades.data and "bucket_5m" in trades.data[0]:
-        signal_time = trades.data[0]["bucket_5m"]
+    signal_time = trades.data[0]["bucket_5m"] if trades.data else None
 
     row = {
         "symbol": symbol,
@@ -111,12 +122,13 @@ def insert_signal(symbol, timeframe, scores, trades):
 
     return sb.table("ai_signals_shortterm").insert(row).execute()
 
+# ========= MAIN =========
 if __name__ == "__main__":
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    symbols = get_all_symbols()  # ✅ fetch all Binance USDT pairs dynamically
     for s in symbols:
-        scores, trades = get_latest_signal_inputs(s, timeframe="5m")
-        insert_signal(s, "5m", scores, trades)
-
-
-
-
+        try:
+            scores, trades = get_latest_signal_inputs(s, timeframe="5m")
+            insert_signal(s, "5m", scores, trades)
+            print(f"[OK] {s} inserted")
+        except Exception as e:
+            print(f"[ERROR] {s}: {e}")
