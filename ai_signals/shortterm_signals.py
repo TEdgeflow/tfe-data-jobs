@@ -21,44 +21,58 @@ WEIGHTS = {
     "volume": 0.10,
 }
 
-# ========= GET DATA =========
+def normalize_symbol(symbol: str, target: str) -> str:
+    """
+    Convert a Binance symbol (BTCUSDT) to the correct format for different tables.
+    """
+    if target == "nansen_whaleflows":
+        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
+    elif target == "v_droptabs_unlocks":
+        return symbol.replace("USDT", "")   # e.g., BTCUSDT -> BTC
+    else:
+        return symbol   # keep as-is for Binance tables
+
+
 def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
     """Fetch latest factor data from Supabase views for a given symbol + timeframe"""
 
     # VWAP
     vwap = sb.table("binance_vwap_agg") \
         .select("vwap, volume_quote, bucket_start") \
-        .eq("symbol", symbol).eq("timeframe", timeframe) \
+        .eq("symbol", normalize_symbol(symbol, "binance_vwap_agg")) \
+        .eq("timeframe", timeframe) \
         .order("bucket_start", desc=True).limit(1).execute()
 
     # Delta
     delta = sb.table("v_signal_delta") \
         .select("strength_value, signal_time") \
-        .eq("symbol", symbol).eq("timeframe", timeframe) \
+        .eq("symbol", normalize_symbol(symbol, "v_signal_delta")) \
+        .eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
     # CVD
     cvd = sb.table("v_signal_cvd") \
         .select("strength_value, signal_time") \
-        .eq("symbol", symbol).eq("timeframe", timeframe) \
+        .eq("symbol", normalize_symbol(symbol, "v_signal_cvd")) \
+        .eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
     # Orderbook agg
     ob = sb.table("binance_orderbook_agg_5m") \
         .select("bid_vol10, ask_vol10, bucket_5m") \
-        .eq("symbol", symbol) \
+        .eq("symbol", normalize_symbol(symbol, "binance_orderbook_agg_5m")) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
     # Liquidations
     liq = sb.table("v_liquidation_agg") \
         .select("long_liquidations, short_liquidations, last_update") \
-        .eq("symbol", symbol) \
+        .eq("symbol", normalize_symbol(symbol, "v_liquidation_agg")) \
         .order("last_update", desc=True).limit(1).execute()
 
     # Trades agg (volume source)
     trades = sb.table("binance_trades_agg_5m") \
         .select("bucket_5m, buy_vol, sell_vol, delta, cvd") \
-        .eq("symbol", symbol) \
+        .eq("symbol", normalize_symbol(symbol, "binance_trades_agg_5m")) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
     # ========= Factor Scores =========
@@ -79,6 +93,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         "liquidation_score": liquidation_score,
         "volume_score": volume_score,
     }, trades
+
 
 # ========= SCORING =========
 def calculate_confidence(scores):
