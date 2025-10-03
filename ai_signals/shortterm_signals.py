@@ -27,37 +27,37 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
 
     # VWAP
     vwap = sb.table("binance_vwap_agg") \
-        .select("vwap, volume_quote") \
+        .select("vwap, volume_quote, bucket_start") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("bucket_start", desc=True).limit(1).execute()
 
     # Delta
     delta = sb.table("v_signal_delta") \
-        .select("strength_value") \
+        .select("strength_value, signal_time") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
     # CVD
     cvd = sb.table("v_signal_cvd") \
-        .select("strength_value") \
+        .select("strength_value, signal_time") \
         .eq("symbol", symbol).eq("timeframe", timeframe) \
         .order("signal_time", desc=True).limit(1).execute()
 
     # Orderbook agg
     ob = sb.table("binance_orderbook_agg_5m") \
-        .select("bid_vol10, ask_vol10") \
+        .select("bid_vol10, ask_vol10, bucket_5m") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
     # Liquidations
     liq = sb.table("v_liquidation_agg") \
-        .select("long_liquidations, short_liquidations") \
+        .select("long_liquidations, short_liquidations, last_update") \
         .eq("symbol", symbol) \
         .order("last_update", desc=True).limit(1).execute()
 
     # Trades agg (volume source)
     trades = sb.table("binance_trades_agg_5m") \
-        .select("buy_vol, sell_vol, delta, cvd") \
+        .select("bucket_5m, buy_vol, sell_vol, delta, cvd") \
         .eq("symbol", symbol) \
         .order("bucket_5m", desc=True).limit(1).execute()
 
@@ -78,7 +78,7 @@ def get_latest_signal_inputs(symbol: str, timeframe: str = "5m"):
         "orderbook_score": orderbook_score,
         "liquidation_score": liquidation_score,
         "volume_score": volume_score,
-    }
+    }, trades
 
 # ========= SCORING =========
 def calculate_confidence(scores):
@@ -89,14 +89,9 @@ def calculate_confidence(scores):
     return round(total * 100, 2)
 
 def get_direction(scores):
-    bullish = (
-        scores["vwap_score"]
-        + scores["delta_score"]
-        + scores["cvd_score"]
-        + scores["orderbook_score"]
-    )
-    bearish = 6 - bullish
-    return "LONG" if bullish >= bearish else "SHORT"
+    positive = scores["vwap_score"] + scores["delta_score"] + scores["cvd_score"] + scores["orderbook_score"]
+    negative = scores["liquidation_score"] + scores["volume_score"]
+    return "LONG" if positive >= negative else "SHORT"
 
 # ========= INSERT =========
 def insert_signal(symbol, timeframe, scores, trades):
@@ -119,7 +114,8 @@ def insert_signal(symbol, timeframe, scores, trades):
         "orderbook_score": scores.get("orderbook_score", 0),
         "liquidation_score": scores.get("liquidation_score", 0),
         "volume_score": scores.get("volume_score", 0),
-        "final_score": scores.get("final_score", 0)
+        "final_score": scores.get("final_score", 0),
+        "direction": scores.get("direction", "NEUTRAL")
     }
 
     res = sb.table("ai_signals_shortterm").insert(row).execute()
@@ -130,7 +126,10 @@ def insert_signal(symbol, timeframe, scores, trades):
 if __name__ == "__main__":
     symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]  # extend later
     for s in symbols:
-        scores = get_latest_signal_inputs(s, timeframe="5m")
-        insert_signal(s, "5m", scores)
+        scores, trades = get_latest_signal_inputs(s, timeframe="5m")
+        scores["final_score"] = calculate_confidence(scores)
+        scores["direction"] = get_direction(scores)
+        insert_signal(s, "5m", scores, trades)
+
 
 
