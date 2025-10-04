@@ -89,7 +89,8 @@ def rsi(series: pd.Series, length: int = 14) -> pd.Series:
     avg_loss = loss.ewm(alpha=1/length, min_periods=length, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     rsi_vals = 100 - (100 / (1 + rs))
-    return rsi_vals.fillna(method="bfill")
+    # old: return rsi_vals.fillna(method="bfill")
+    return rsi_vals.bfill().ffill()
 
 def stoch_rsi(rsi_series: pd.Series, length: int = 14, smooth_k: int = 3, smooth_d: int = 3):
     rsi_min = rsi_series.rolling(length).min()
@@ -98,7 +99,9 @@ def stoch_rsi(rsi_series: pd.Series, length: int = 14, smooth_k: int = 3, smooth
     st = ((rsi_series - rsi_min) / denom).clip(0, 1) * 100.0
     k = st.rolling(smooth_k).mean()
     d = k.rolling(smooth_d).mean()
-    return k.fillna(method="bfill"), d.fillna(method="bfill")
+    # old: return k.fillna(method="bfill"), d.fillna(method="bfill")
+    return k.bfill().ffill(), d.bfill().ffill()
+
 
 def compute_and_upsert_indicators(df: pd.DataFrame):
     if df.empty:
