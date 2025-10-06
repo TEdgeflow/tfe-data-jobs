@@ -47,7 +47,7 @@ def fetch_combined_data():
     select * from core;
     """
 
-    res = sb.rpc("exec_sql", {"sql": query}).execute()
+    res = sb.table("v_signal_market_structure_core").select("*").limit(500).execute()
     return res.data if res.data else []
 
 # ========= UPSERT DATA =========
