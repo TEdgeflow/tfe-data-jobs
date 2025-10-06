@@ -82,14 +82,18 @@ def process_trades(symbol="BTCUSDT"):
 
 # ========= MAIN LOOP =========
 def main():
-    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later
+   symbols = fetch_all_symbols()
+    print(f"[info] fetched {len(symbols)} active symbols")
+
     while True:
         for sym in symbols:
             try:
                 process_trades(symbol=sym)
+                time.sleep(0.25)  # prevent API rate-limit
             except Exception as e:
                 print(f"[error] {sym}: {e}")
-        time.sleep(60)  # fetch every 1 min
+        print("[cycle] completed one full loop over all symbols")
+        time.sleep(60)  # wait 1 minute before next full cycle
 
 if __name__ == "__main__":
     main()
