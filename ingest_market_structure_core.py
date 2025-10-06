@@ -50,6 +50,16 @@ def fetch_combined_data():
     res = sb.table("v_signal_market_structure_core_raw").select("*").limit(500).execute()
     return res.data if res.data else []
 
+# Filter columns to match actual table schema
+allowed_columns = [
+    "symbol", "signal_time", "delta_strength", "delta_direction",
+    "cvd_strength", "cvd_direction", "vwap_deviation",
+    "funding_rate", "open_interest", "price_close",
+    "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
+]
+data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
+
+
 # ========= UPSERT DATA =========
 def upsert_signal_data(data):
     if not data:
