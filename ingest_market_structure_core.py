@@ -79,7 +79,7 @@ def upsert_signal_data(data):
     filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
 
     try:
-      sb.table("public.signal_market_structure_core_raw").upsert(
+      sb.table("signal_market_structure_core_raw").upsert(
             filtered_data,
             on_conflict=["symbol", "signal_time"]
         ).execute()
