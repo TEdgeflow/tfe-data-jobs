@@ -47,7 +47,7 @@ def fetch_combined_data():
     select * from core;
     """
 
-    res = sb.table("v_signal_market_structure_core_raw").select("*").limit(500).execute()
+    res = sb.table("v_signal_market_structure_core").select("*").limit(500).execute()
     return res.data if res.data else []
 
 # Filter columns to match actual table schema
