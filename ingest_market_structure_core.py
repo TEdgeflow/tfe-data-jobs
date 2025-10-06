@@ -91,10 +91,10 @@ def upsert_signal_data(data):
         # Step 2: insert any new rows (ignore errors on duplicates)
         sb.table("signal_market_structure_core_raw").upsert(
     filtered_data,
-    on_conflict=["symbol", "signal_time"]
+    on_conflict=["symbol", "signal_time"],  # matches your unique constraint
+    ignore_duplicates=False                 # default = False, ensures updates
 ).execute()
 
-      
 
 # ========= MAIN LOOP =========
 def main():
