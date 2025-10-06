@@ -48,7 +48,6 @@ def fetch_combined_data():
     """
 
     try:
-        # ✅ Execute dynamic SQL through Supabase RPC function
         res = sb.rpc("exec_sql", {"sql": query}).execute()
         if not res.data:
             print("[skip] No new data found in query result.")
@@ -65,36 +64,29 @@ def upsert_signal_data(data):
         print("[skip] No new data to upsert.")
         return
 
-    # Add last_updated_at column
     now_ts = datetime.now(timezone.utc).isoformat()
-    for row in data:
-        row["last_updated_at"] = now_ts
-
-    # Filter allowed columns (to avoid schema mismatch)
     allowed_columns = [
         "symbol", "signal_time", "delta_strength", "delta_direction",
         "cvd_strength", "cvd_direction", "vwap_deviation",
         "funding_rate", "open_interest", "price_close",
         "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
     ]
-    filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
+
+    # Filter & enrich data
+    filtered_data = []
+    for row in data:
+        row["last_updated_at"] = now_ts
+        clean_row = {k: v for k, v in row.items() if k in allowed_columns}
+        filtered_data.append(clean_row)
 
     try:
-        # Step 1: update existing rows by symbol+signal_time
-        for row in filtered_data:
-            sb.table("signal_market_structure_core_raw") \
-              .update(row) \
-              .eq("symbol", row["symbol"]) \
-              .eq("signal_time", row["signal_time"]) \
-              .execute()
-
-        # Step 2: insert any new rows (ignore errors on duplicates)
         sb.table("signal_market_structure_core_raw").upsert(
-    filtered_data,
-    on_conflict=["symbol", "signal_time"],  # matches your unique constraint
-    ignore_duplicates=False                 # default = False, ensures updates
-).execute()
-
+            filtered_data,
+            on_conflict=["symbol", "signal_time"]
+        ).execute()
+        print(f"[ok] Upserted {len(filtered_data)} rows.")
+    except Exception as e:
+        print(f"[error] Upsert failed: {e}")
 
 # ========= MAIN LOOP =========
 def main():
