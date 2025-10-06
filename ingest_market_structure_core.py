@@ -66,8 +66,9 @@ def upsert_signal_data(data):
         return
 
     # Add last_updated_at column
+    now_ts = datetime.now(timezone.utc).isoformat()
     for row in data:
-        row["last_updated_at"] = datetime.now(timezone.utc).isoformat()
+        row["last_updated_at"] = now_ts
 
     # Filter allowed columns (to avoid schema mismatch)
     allowed_columns = [
@@ -78,21 +79,21 @@ def upsert_signal_data(data):
     ]
     filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
 
-    import time
-    for attempt in range(3):  # retry up to 3 times
-        try:
-            sb.table("public.signal_market_structure_core_raw").upsert(
-                filtered_data,
-                on_conflict=["symbol", "signal_time"]
-            ).execute()
-            print(f"[ok] Upserted {len(filtered_data)} rows on attempt {attempt+1}.")
-            break
-        except Exception as e:
-            print(f"[warn] Attempt {attempt+1} failed: {e}")
-            time.sleep(5)
-    else:
-        print("[error] All retries failed.")
+    try:
+        # Step 1: update existing rows by symbol+signal_time
+        for row in filtered_data:
+            sb.table("signal_market_structure_core_raw") \
+              .update(row) \
+              .eq("symbol", row["symbol"]) \
+              .eq("signal_time", row["signal_time"]) \
+              .execute()
 
+        # Step 2: insert any new rows (ignore errors on duplicates)
+        sb.table("signal_market_structure_core_raw").insert(filtered_data).execute()
+
+        print(f"[ok] Upsert fallback completed for {len(filtered_data)} rows.")
+    except Exception as e:
+        print(f"[error] Upsert fallback failed: {e}")
 
 # ========= MAIN LOOP =========
 def main():
