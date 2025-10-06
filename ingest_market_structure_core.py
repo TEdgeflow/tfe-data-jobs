@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from supabase import create_client, Client
 
 # ========= ENV VARS =========
@@ -15,7 +15,7 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 TIME_WINDOW_HOURS = 12   # pull data from last 12 hours
 LIMIT_ROWS = 500         # fetch limit per run
 
-# ========= MAIN INGESTION QUERY =========
+# ========= FETCH COMBINED DATA =========
 def fetch_combined_data():
     query = f"""
     with core as (
@@ -47,18 +47,17 @@ def fetch_combined_data():
     select * from core;
     """
 
-    res = sb.table("v_signal_market_structure_core").select("*").limit(500).execute()
-    return res.data if res.data else []
-
-# Filter columns to match actual table schema
-allowed_columns = [
-    "symbol", "signal_time", "delta_strength", "delta_direction",
-    "cvd_strength", "cvd_direction", "vwap_deviation",
-    "funding_rate", "open_interest", "price_close",
-    "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
-]
-data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
-
+    try:
+        # ✅ Execute dynamic SQL through Supabase RPC function
+        res = sb.rpc("exec_sql", {"sql": query}).execute()
+        if not res.data:
+            print("[skip] No new data found in query result.")
+            return []
+        print(f"[fetch] Retrieved {len(res.data)} rows.")
+        return res.data
+    except Exception as e:
+        print(f"[error] Failed fetching combined data: {e}")
+        return []
 
 # ========= UPSERT DATA =========
 def upsert_signal_data(data):
@@ -66,14 +65,25 @@ def upsert_signal_data(data):
         print("[skip] No new data to upsert.")
         return
 
+    # Add last_updated_at column
     for row in data:
         row["last_updated_at"] = datetime.now(timezone.utc).isoformat()
 
+    # Filter allowed columns (to avoid schema mismatch)
+    allowed_columns = [
+        "symbol", "signal_time", "delta_strength", "delta_direction",
+        "cvd_strength", "cvd_direction", "vwap_deviation",
+        "funding_rate", "open_interest", "price_close",
+        "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
+    ]
+    filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
+
     try:
         sb.table("signal_market_structure_core_raw").upsert(
-            data, on_conflict=["symbol", "signal_time"]
+            filtered_data,
+            on_conflict=["symbol", "signal_time"]
         ).execute()
-        print(f"[ok] Upserted {len(data)} rows.")
+        print(f"[ok] Upserted {len(filtered_data)} rows.")
     except Exception as e:
         print(f"[error] Upsert failed: {e}")
 
@@ -86,3 +96,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
