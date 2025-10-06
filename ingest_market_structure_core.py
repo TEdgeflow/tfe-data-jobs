@@ -78,14 +78,21 @@ def upsert_signal_data(data):
     ]
     filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
 
-    try:
-      sb.table("signal_market_structure_core_raw").upsert(
-            filtered_data,
-            on_conflict=["symbol", "signal_time"]
-        ).execute()
-        print(f"[ok] Upserted {len(filtered_data)} rows.")
-    except Exception as e:
-        print(f"[error] Upsert failed: {e}")
+    import time
+    for attempt in range(3):  # retry up to 3 times
+        try:
+            sb.table("signal_market_structure_core_raw").upsert(
+                filtered_data,
+                on_conflict=["symbol", "signal_time"]
+            ).execute()
+            print(f"[ok] Upserted {len(filtered_data)} rows on attempt {attempt+1}.")
+            break
+        except Exception as e:
+            print(f"[warn] Attempt {attempt+1} failed: {e}")
+            time.sleep(5)
+    else:
+        print("[error] All retries failed.")
+
 
 # ========= MAIN LOOP =========
 def main():
