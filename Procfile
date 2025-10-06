@@ -35,7 +35,7 @@ worker: python ingesters/binance_trades_ingest.py
 shortterm_signals: python ai_signals/shortterm_signals.py
 daybias: python ai_signals/daybias_signals.py
 worker: python -u ingesters/binance_ohlcv_with_rsi.py
-ingest_market_structure_core: python ingest_market_structure_core.py
+worker: python refresh_market_structure.py
 
 
 
