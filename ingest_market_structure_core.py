@@ -94,9 +94,7 @@ def upsert_signal_data(data):
     on_conflict=["symbol", "signal_time"]
 ).execute()
 
-        print(f"[ok] Upsert fallback completed for {len(filtered_data)} rows.")
-    except Exception as e:
-        print(f"[error] Upsert fallback failed: {e}")
+      
 
 # ========= MAIN LOOP =========
 def main():
