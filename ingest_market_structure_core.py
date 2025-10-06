@@ -40,7 +40,7 @@ def fetch_combined_data():
       left join v_funding_rates f on f.symbol = d.symbol
       left join v_open_interest o on o.symbol = d.symbol
       left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
-      left join v_ai_signals_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
+      left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
       where d.signal_time > now() - interval '{TIME_WINDOW_HOURS} hours'
       limit {LIMIT_ROWS}
     )
