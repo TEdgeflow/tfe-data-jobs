@@ -81,7 +81,7 @@ def upsert_signal_data(data):
     import time
     for attempt in range(3):  # retry up to 3 times
         try:
-            sb.table("signal_market_structure_core_raw").upsert(
+            sb.table("public.signal_market_structure_core_raw").upsert(
                 filtered_data,
                 on_conflict=["symbol", "signal_time"]
             ).execute()
