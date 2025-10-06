@@ -72,19 +72,25 @@ def upsert_signal_data(data):
         "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
     ]
 
-    # Filter & enrich data
-    filtered_data = []
+    # ========== 🔍 Deduplicate by (symbol, signal_time)
+    unique_data = {}
     for row in data:
-        row["last_updated_at"] = now_ts
-        clean_row = {k: v for k, v in row.items() if k in allowed_columns}
-        filtered_data.append(clean_row)
+        key = (row.get("symbol"), row.get("signal_time"))
+        # Keep latest record if duplicates exist
+        if key not in unique_data or row.get("signal_time") > unique_data[key].get("signal_time", ""):
+            row["last_updated_at"] = now_ts
+            clean_row = {k: v for k, v in row.items() if k in allowed_columns}
+            unique_data[key] = clean_row
+
+    deduped_data = list(unique_data.values())
+    print(f"[clean] Deduplicated to {len(deduped_data)} unique rows (from {len(data)}).")
 
     try:
         sb.table("signal_market_structure_core_raw").upsert(
-            filtered_data,
+            deduped_data,
             on_conflict=["symbol", "signal_time"]
         ).execute()
-        print(f"[ok] Upserted {len(filtered_data)} rows.")
+        print(f"[ok] Upserted {len(deduped_data)} rows.")
     except Exception as e:
         print(f"[error] Upsert failed: {e}")
 
@@ -97,4 +103,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
