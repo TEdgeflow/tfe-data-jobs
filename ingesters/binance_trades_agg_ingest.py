@@ -82,7 +82,7 @@ def process_trades(symbol="BTCUSDT"):
 
 # ========= MAIN LOOP =========
 def main():
-    symbols = get_all_usdt_symbols()   # 🔹 now pulls ALL USDT pairs dynamically
+    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later
     while True:
         for sym in symbols:
             try:
@@ -93,3 +93,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
