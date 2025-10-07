@@ -100,7 +100,6 @@ def main():
     print(f"[start] Live ingestion started at {datetime.now().isoformat()}")
     data = fetch_recent_signals()
     upsert_live_signals(data)
-    refresh_materialized_view()
     print(f"[done] Processed {len(data)} live records.")
 
 if __name__ == "__main__":
