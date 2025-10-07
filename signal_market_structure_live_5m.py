@@ -70,12 +70,14 @@ def upsert_live_signals(data):
     now_ts = datetime.now(timezone.utc).isoformat()
     for row in data:
         row["last_updated_at"] = now_ts
+        row["timeframe"] = "5m"  # 👈 mark this dataset as 5-minute
 
     allowed_columns = [
         "symbol", "signal_time", "delta_strength", "delta_direction",
         "cvd_strength", "cvd_direction", "vwap_deviation",
         "funding_rate", "open_interest", "price_close",
-        "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "last_updated_at"
+        "trade_volume", "rsi_14", "stoch_rsi_k", "stoch_rsi_d",
+        "timeframe", "last_updated_at"
     ]
     filtered_data = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
 
@@ -83,7 +85,7 @@ def upsert_live_signals(data):
         try:
             sb.table("signal_market_structure_core_raw").upsert(
                 filtered_data,
-                on_conflict=["symbol", "signal_time"]
+                on_conflict=["symbol", "timeframe", "signal_time"]  # 👈 include timeframe
             ).execute()
             print(f"[ok] Live ingestion upserted {len(filtered_data)} rows.")
             return
@@ -91,6 +93,7 @@ def upsert_live_signals(data):
             print(f"[warn] Attempt {attempt+1} failed: {e}")
             time.sleep(3)
     print("[error] All retries failed during live upsert.")
+
 
 # ========= REFRESH MATERIALIZED VIEW =========
 def refresh_materialized_view():
