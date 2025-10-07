@@ -8,6 +8,7 @@ from supabase import create_client, Client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 BINANCE_URL = "https://api.binance.com/api/v3/trades"
+BINANCE_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
@@ -15,6 +16,24 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= HELPERS =========
+def get_all_usdt_symbols():
+    """Fetch ALL available USDT trading pairs directly from Binance"""
+    try:
+        resp = requests.get(BINANCE_EXCHANGE_INFO_URL)
+        resp.raise_for_status()
+        data = resp.json()
+        symbols = [
+            s["symbol"]
+            for s in data["symbols"]
+            if s["symbol"].endswith("USDT") and s["status"] == "TRADING"
+        ]
+        print(f"[info] fetched {len(symbols)} active USDT pairs")
+        return symbols
+    except Exception as e:
+        print(f"[error] failed fetching symbols: {e}")
+        # fallback to a few main pairs
+        return ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+
 def get_binance_trades(symbol="BTCUSDT", limit=1000):
     """Fetch latest trades from Binance"""
     url = f"{BINANCE_URL}?symbol={symbol}&limit={limit}"
@@ -46,7 +65,6 @@ def process_trades(symbol="BTCUSDT"):
         bucket_15m, bucket_1h, bucket_1d = bucketize(ts)
 
         key = (bucket_15m, bucket_1h, bucket_1d)
-
         if key not in agg_map:
             agg_map[key] = {
                 "symbol": symbol,
@@ -70,8 +88,6 @@ def process_trades(symbol="BTCUSDT"):
             row["delta"] -= quote_qty
             row["bearish_trades"] += 1
 
-    # Calculate CVD (cumulative delta over time)
-    # ✅ Here we do it simply per run, you can later extend with windowed CV
     for row in agg_map.values():
         row["cvd"] = row["delta"]
 
@@ -82,15 +98,18 @@ def process_trades(symbol="BTCUSDT"):
 
 # ========= MAIN LOOP =========
 def main():
-    symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]  # extend later
+    symbols = get_all_usdt_symbols()   # 🔹 pulls ALL USDT pairs dynamically
     while True:
         for sym in symbols:
             try:
                 process_trades(symbol=sym)
+                time.sleep(0.25)  # avoid Binance API rate limit
             except Exception as e:
                 print(f"[error] {sym}: {e}")
-        time.sleep(60)  # fetch every 1 min
+        print("[cycle] completed one full loop over all symbols")
+        time.sleep(60)  # wait 1 min between loops
 
 if __name__ == "__main__":
     main()
+
 
