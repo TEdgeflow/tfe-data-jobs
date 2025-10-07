@@ -36,9 +36,9 @@ shortterm_signals: python ai_signals/shortterm_signals.py
 daybias: python ai_signals/daybias_signals.py
 worker: python -u ingesters/binance_ohlcv_with_rsi.py
 worker: python refresh_market_structure.py
-signal_market_structure_live_5m: python ingesters/signal_market_structure_live_5m.py
-signal_market_structure_bucket_live: python ingesters/signal_market_structure_bucket_live.py
-signal_market_structure_backfill: python ingesters/signal_market_structure_backfill.py
+signal_market_structure_live_5m: python signal_market_structure_live_5m.py
+signal_market_structure_bucket_live: python signal_market_structure_bucket_live.py
+signal_market_structure_backfill: python signal_market_structure_backfill.py
 
 
 
