@@ -82,7 +82,7 @@ def process_trades(symbol="BTCUSDT"):
 
 # ========= MAIN LOOP =========
 def main():
-   symbols = fetch_all_symbols()
+  symbols = fetch_all_symbols()
     print(f"[info] fetched {len(symbols)} active symbols")
 
     while True:
