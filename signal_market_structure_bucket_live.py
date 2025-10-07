@@ -1,7 +1,6 @@
-import os
-from datetime import datetime, timezone
+import os, time
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
-import time
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -14,12 +13,13 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= CONFIG =========
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-LIMIT_ROWS = 500
-REFRESH_VIEW = "v_signal_market_structure_core_mat"
+BATCH_HOURS = 24          # how many hours per step
+LIMIT_ROWS = 500          # per fetch
+MAX_DAYS_BACK = 30        # how far to backfill
+SLEEP_BETWEEN_BATCHES = 3 # seconds between each pull
 
 # ========= QUERY TEMPLATE =========
-def build_query(tf: str) -> str:
-    """Return SQL query customized per timeframe."""
+def build_query(tf, start_ts, end_ts):
     return f"""
     with core as (
       select
@@ -39,77 +39,73 @@ def build_query(tf: str) -> str:
         r.stoch_rsi_d
       from v_signal_delta_{tf} d
       left join v_signal_cvd_{tf} c on c.symbol = d.symbol and c.signal_time = d.signal_time
-      left join v_vwap_5m v on v.symbol = d.symbol  -- keep 5m VWAP baseline
+      left join v_vwap_5m v on v.symbol = d.symbol
       left join v_funding_rates f on f.symbol = d.symbol
       left join v_open_interest o on o.symbol = d.symbol
       left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
       left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
-      where d.signal_time > now() - interval '72 hours'
+      where d.signal_time between '{start_ts}' and '{end_ts}'
       limit {LIMIT_ROWS}
     )
     select *, '{tf}' as timeframe from core;
     """
 
-# ========= FETCH FUNCTION =========
-def fetch_combined_data(tf):
+# ========= FETCH + UPSERT =========
+def fetch_and_upsert(tf, start_ts, end_ts):
+    q = build_query(tf, start_ts, end_ts)
     try:
-        query = build_query(tf)
-        res = sb.rpc("exec_sql", {"sql": query}).execute()
-        if not res.data:
-            print(f"[skip:{tf}] No data fetched.")
-            return []
-        print(f"[fetch:{tf}] Retrieved {len(res.data)} rows.")
-        return res.data
-    except Exception as e:
-        print(f"[error:{tf}] Fetch failed: {e}")
-        return []
+        res = sb.rpc("exec_sql", {"sql": q}).execute()
+        data = res.data or []
+        if not data:
+            print(f"[skip:{tf}] No rows between {start_ts} → {end_ts}")
+            return 0
+        print(f"[fetch:{tf}] {len(data)} rows {start_ts} → {end_ts}")
 
-# ========= UPSERT FUNCTION =========
-def upsert_signal_data(data):
-    if not data:
-        print("[skip] No new data to upsert.")
-        return
+        now_ts = datetime.now(timezone.utc).isoformat()
+        for r in data:
+            r["last_updated_at"] = now_ts
 
-    now_ts = datetime.now(timezone.utc).isoformat()
-    for row in data:
-        row["last_updated_at"] = now_ts
+        allowed = [
+            "symbol", "signal_time", "delta_strength", "delta_direction",
+            "cvd_strength", "cvd_direction", "vwap_deviation",
+            "funding_rate", "open_interest", "price_close", "trade_volume",
+            "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "timeframe", "last_updated_at"
+        ]
+        filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
-    allowed_columns = [
-        "symbol", "signal_time", "delta_strength", "delta_direction",
-        "cvd_strength", "cvd_direction", "vwap_deviation",
-        "funding_rate", "open_interest", "price_close", "trade_volume",
-        "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "timeframe", "last_updated_at"
-    ]
-
-    filtered = [{k: v for k, v in row.items() if k in allowed_columns} for row in data]
-
-    try:
         sb.table("signal_market_structure_core_raw").upsert(
             filtered, on_conflict=["symbol", "timeframe", "signal_time"]
         ).execute()
-        print(f"[ok] Upserted {len(filtered)} rows.")
-    except Exception as e:
-        print(f"[error] Upsert failed: {e}")
 
-# ========= REFRESH MATERIALIZED VIEW =========
-def refresh_view():
-    try:
-        sb.rpc("exec_sql", {"sql": f"REFRESH MATERIALIZED VIEW CONCURRENTLY {REFRESH_VIEW};"}).execute()
-        print(f"[refresh] Materialized view {REFRESH_VIEW} refreshed.")
+        print(f"[ok:{tf}] Upserted {len(filtered)} rows.")
+        return len(filtered)
+
     except Exception as e:
-        print(f"[warn] View refresh failed: {e}")
+        print(f"[error:{tf}] {e}")
+        return 0
 
 # ========= MAIN LOOP =========
 def main():
-    print(f"[start] Market structure bucket ingest at {datetime.now().isoformat()}")
-    total = 0
+    print(f"[start] Backfill at {datetime.now().isoformat()}")
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(hours=BATCH_HOURS)
+
     for tf in TIMEFRAMES:
-        data = fetch_combined_data(tf)
-        upsert_signal_data(data)
-        total += len(data)
-        time.sleep(3)
-    refresh_view()
-    print(f"[done] {total} total rows processed across {TIMEFRAMES}.")
+        days_back = 0
+        total = 0
+        while days_back < MAX_DAYS_BACK:
+            rows = fetch_and_upsert(tf, start_time.isoformat(), end_time.isoformat())
+            total += rows
+            if rows == 0:
+                days_back += 1
+            else:
+                days_back = 0  # reset if we still find data
+            end_time = start_time
+            start_time = end_time - timedelta(hours=BATCH_HOURS)
+            time.sleep(SLEEP_BETWEEN_BATCHES)
+        print(f"[done:{tf}] {total} total rows added for {tf} timeframe.\n")
+    print("[complete] Backfill finished for all timeframes.")
 
 if __name__ == "__main__":
     main()
+
