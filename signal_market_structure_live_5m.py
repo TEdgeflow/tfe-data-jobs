@@ -95,15 +95,6 @@ def upsert_live_signals(data):
     print("[error] All retries failed during live upsert.")
 
 
-# ========= REFRESH MATERIALIZED VIEW =========
-def refresh_materialized_view():
-    try:
-        print("[refresh] Refreshing materialized view v_signal_market_structure_core_mat...")
-        sb.rpc("exec_sql", {"sql": "REFRESH MATERIALIZED VIEW CONCURRENTLY v_signal_market_structure_core_mat;"}).execute()
-        print("[ok] Materialized view refreshed successfully.")
-    except Exception as e:
-        print(f"[warn] Failed to refresh materialized view: {e}")
-
 # ========= MAIN LOOP =========
 def main():
     print(f"[start] Live ingestion started at {datetime.now().isoformat()}")
