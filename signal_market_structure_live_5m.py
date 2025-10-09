@@ -82,8 +82,8 @@ def main():
         ]
         filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
-        sb.table(TABLE_NAME).upsert(
-            filtered, on_conflict="signal_market_structure_agg_5m_unique"
+        sb.table("signal_market_structure_agg_5m_unique").upsert(
+            filtered, on_conflict=["symbol", "timeframe", "signal_time"]
         ).execute()
         print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
 
