@@ -91,8 +91,8 @@ def fetch_and_upsert(tf, start_ts, end_ts):
         ]
         filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
-        sb.table(TABLE_NAME).upsert(
-            filtered, on_conflict=["symbol", "timeframe", "signal_time"]
+        sb.table("signal_market_structure_agg_tf").upsert(
+            filtered, on_conflict="signal_market_structure_agg_tf_unique"
         ).execute()
         print(f"[ok:{tf}] Upserted {len(filtered)} rows ({start_ts} → {end_ts})")
         return len(filtered)
