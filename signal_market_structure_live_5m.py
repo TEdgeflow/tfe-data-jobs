@@ -108,22 +108,24 @@ def fetch_and_upsert():
             filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
             sb.table(TABLE_NAME).upsert(
-                filtered, on_conflict=["symbol", "signal_time"]
+                filtered, on_conflict=['symbol', 'timeframe', 'signal_time']
             ).execute()
 
             print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
             return len(filtered)
 
-        except Exception as e:
-            attempt += 1
-            print(f"[error] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
-            if attempt < MAX_RETRIES:
-                print(f"→ Retrying in {RETRY_DELAY}s...")
-                time.sleep(RETRY_DELAY)
-            else:
-                print(f"[fail] Giving up after {MAX_RETRIES} attempts.")
-                return 0
-
+       for attempt in range(1, MAX_RETRIES + 1):
+    try:
+        # execute upsert
+        break
+    except Exception as e:
+        print(f"[error:{tf}] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
+        if attempt < MAX_RETRIES:
+            print(f"→ Retrying in {RETRY_DELAY}s...")
+            time.sleep(RETRY_DELAY)
+        else:
+            print(f"[fail:{tf}] Giving up after {MAX_RETRIES} attempts.")
+            
 # ========= MAIN =========
 def main():
     print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
