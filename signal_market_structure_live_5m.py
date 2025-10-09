@@ -1,9 +1,6 @@
 import os
-import time
-from datetime import datetime, timezone
+import requests
 from supabase import create_client, Client
-import httpx
-from requests.exceptions import Timeout
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -12,22 +9,16 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 
-# ✅ Insert here:
-from gotrue import SyncGoTrueClient
-from postgrest import SyncPostgrestClient
-from realtime import SyncRealtimeClient
-from storage3 import SyncStorageClient
-from supabase._sync.client import SyncClient
+# ========= SAFE CLIENT WITH TIMEOUT =========
+session = requests.Session()
+adapter = requests.adapters.HTTPAdapter(max_retries=3, pool_connections=10, pool_maxsize=10)
+session.mount("https://", adapter)
+session.request = lambda *a, **kw: requests.request(*a, timeout=60, **kw)  # 60-sec timeout
 
-sb = SyncClient(
-    supabase_url=SUPABASE_URL,
-    supabase_key=SUPABASE_KEY,
-    auth_client=SyncGoTrueClient(f"{SUPABASE_URL}/auth/v1", SUPABASE_KEY),
-    storage_client=SyncStorageClient(f"{SUPABASE_URL}/storage/v1", SUPABASE_KEY),
-    postgrest_client=SyncPostgrestClient(f"{SUPABASE_URL}/rest/v1", SUPABASE_KEY),
-    realtime_client=SyncRealtimeClient(f"{SUPABASE_URL}/realtime/v1", SUPABASE_KEY),
-)
-sb.postgrest_client.session.timeout = 60
+sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+print("[init] Supabase client connected successfully.")
+
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
 TIME_WINDOW_HOURS = 0.5  # Fetch the freshest 30 minutes only
