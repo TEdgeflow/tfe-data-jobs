@@ -127,7 +127,7 @@ def fetch_and_upsert():
 # ========= MAIN =========
 def main():
     print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
-    print("[debug] using on_conflict = ['symbol', 'signal_time']")
+    print("[debug] using on_conflict = ['symbol', 'timeframe', 'signal_time']
 
     total_rows = fetch_and_upsert()
     print("========== SUMMARY ==========")
