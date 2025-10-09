@@ -19,12 +19,11 @@ session.mount("https://", adapter)
 session.request = lambda *a, **kw: requests.request(*a, timeout=60, **kw)  # 60-sec timeout
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 print("[init] Supabase client connected successfully.")
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-TIME_WINDOW_HOURS = 0.5  # Fetch the freshest 30 minutes only
+TIME_WINDOW_HOURS = 0.5  # Fetch last 30 minutes
 TABLE_NAME = "signal_market_structure_agg_5m"
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds between retries
@@ -76,18 +75,13 @@ def build_query():
 def fetch_and_upsert():
     """Fetch data and upsert into Supabase table"""
     q = build_query()
-    attempt = 0
 
-    while attempt < MAX_RETRIES:
+    for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # Run RPC safely with timeout handling
-            try:
-                res = sb.rpc("exec_sql", {"sql": q}).execute()
-            except Timeout:
-                print("[error] RPC timeout — query took too long.")
-                return 0
-
+            # Run RPC safely
+            res = sb.rpc("exec_sql", {"sql": q}).execute()
             data = res.data or []
+
             if not data:
                 print("[skip] No data returned.")
                 return 0
@@ -108,28 +102,27 @@ def fetch_and_upsert():
             filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
             sb.table(TABLE_NAME).upsert(
-                filtered, on_conflict=['symbol', 'timeframe', 'signal_time']
+                filtered, on_conflict=["symbol", "signal_time"]
             ).execute()
 
             print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
             return len(filtered)
 
-       for attempt in range(1, MAX_RETRIES + 1):
-    try:
-        # execute upsert
-        break
-    except Exception as e:
-        print(f"[error:{tf}] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
-        if attempt < MAX_RETRIES:
-            print(f"→ Retrying in {RETRY_DELAY}s...")
-            time.sleep(RETRY_DELAY)
-        else:
-            print(f"[fail:{tf}] Giving up after {MAX_RETRIES} attempts.")
-            
+        except Timeout:
+            print(f"[error:{TABLE_NAME}] RPC timeout — retrying...")
+        except Exception as e:
+            print(f"[error:{TABLE_NAME}] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES:
+                print(f"→ Retrying in {RETRY_DELAY}s...")
+                time.sleep(RETRY_DELAY)
+            else:
+                print(f"[fail:{TABLE_NAME}] Giving up after {MAX_RETRIES} attempts.")
+                return 0
+
 # ========= MAIN =========
 def main():
     print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
-    print("[debug] using on_conflict = ['symbol', 'timeframe', 'signal_time']
+    print("[debug] using on_conflict = ['symbol', 'signal_time']")
 
     total_rows = fetch_and_upsert()
     print("========== SUMMARY ==========")
