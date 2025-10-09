@@ -56,7 +56,7 @@ def build_query(tf: str, window_hours: int):
             r.stoch_rsi_d
         from v_signal_delta_{tf} d
         left join v_signal_cvd_{tf} c on c.symbol = d.symbol and c.signal_time = d.signal_time
-        left join v_vwap_{tf} v on v.symbol = d.symbol
+        left join v_vwap_24h v on v.symbol = d.symbol
         left join v_funding_rates f on f.symbol = d.symbol
         left join v_open_interest o on o.symbol = d.symbol
         left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
