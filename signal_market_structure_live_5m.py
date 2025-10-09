@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from supabase import create_client
 
 # ========= ENV VARS =========
@@ -11,16 +11,18 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+sb.postgrest.timeout(60000)  # 60-second timeout to prevent RPC timeouts
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-TIME_WINDOW_HOURS = 12  # how far back to fetch
+TIME_WINDOW_HOURS = 0.5  # Look back only 30 minutes (freshest data)
 TABLE_NAME = "signal_market_structure_agg_5m"
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds between retries
 
 # ========= HELPERS =========
 def add_buckets(ts):
+    """Round timestamps into 5-minute buckets"""
     if isinstance(ts, str):
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00")) if "Z" in ts else datetime.fromisoformat(ts)
     else:
@@ -29,6 +31,7 @@ def add_buckets(ts):
 
 # ========= QUERY =========
 def build_query():
+    """Builds SQL query for fetching 5m signals"""
     return f"""
     with core as (
         select
@@ -62,6 +65,7 @@ def build_query():
 
 # ========= FETCH + UPSERT =========
 def fetch_and_upsert():
+    """Fetch data and upsert into Supabase"""
     q = build_query()
     attempt = 0
 
