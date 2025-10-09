@@ -12,9 +12,24 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 
-# ========= CLIENT WITH TIMEOUT =========
-http = httpx.Client(timeout=60.0)  # 60-second network timeout
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options={"http_client": http})
+# ✅ Manual Supabase Client (SDK v2+ compatible)
+from gotrue import SyncGoTrueClient
+from postgrest import SyncPostgrestClient
+from realtime import SyncRealtimeClient
+from storage3 import SyncStorageClient
+from supabase._sync.client import SyncClient
+
+sb = SyncClient(
+    supabase_url=SUPABASE_URL,
+    supabase_key=SUPABASE_KEY,
+    auth_client=SyncGoTrueClient(f"{SUPABASE_URL}/auth/v1", SUPABASE_KEY),
+    storage_client=SyncStorageClient(f"{SUPABASE_URL}/storage/v1", SUPABASE_KEY),
+    postgrest_client=SyncPostgrestClient(f"{SUPABASE_URL}/rest/v1", SUPABASE_KEY),
+    realtime_client=SyncRealtimeClient(f"{SUPABASE_URL}/realtime/v1", SUPABASE_KEY),
+)
+
+# ✅ 60-second RPC timeout (to prevent query freezes)
+sb.postgrest_client.session.timeout = 60
 
 # ========= CONFIG =========
 TIMEFRAMES = ["15m", "1h", "1d"]
