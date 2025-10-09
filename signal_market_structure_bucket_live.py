@@ -1,7 +1,9 @@
 import os
 import time
-from datetime import datetime, timezone, timedelta
-from supabase import create_client
+from datetime import datetime, timezone
+from supabase import create_client, Client
+import httpx
+from requests.exceptions import Timeout
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -10,31 +12,29 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 
-sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-sb.postgrest.timeout(60000)  # 60 seconds
+# ========= CLIENT WITH TIMEOUT =========
+http = httpx.Client(timeout=60.0)  # 60 seconds global HTTP timeout
+sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options={"http_client": http})
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-BATCH_HOURS = 6       # total lookback window (past 6 hours)
-CHUNK_HOURS = 1       # process each 1-hour block separately
-TABLE_NAME = "signal_market_structure_agg_tf"
-TIMEFRAMES = ["15m", "1h", "1d"]
+TIME_WINDOW_HOURS = 0.5  # Fetch the freshest 30 minutes only
+TABLE_NAME = "signal_market_structure_agg_5m"
 MAX_RETRIES = 3
-RETRY_DELAY = 0.25       # seconds between retries
+RETRY_DELAY = 5  # seconds between retries
 
 # ========= HELPERS =========
 def add_buckets(ts):
+    """Round timestamps into 5-minute buckets"""
     if isinstance(ts, str):
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00")) if "Z" in ts else datetime.fromisoformat(ts)
     else:
         dt = ts
-    b15 = dt.replace(minute=(dt.minute // 15) * 15, second=0, microsecond=0)
-    b1h = dt.replace(minute=0, second=0, microsecond=0)
-    b1d = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    return b15, b1h, b1d
+    return dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
 
 # ========= QUERY BUILDER =========
-def build_query(tf, start_ts, end_ts):
+def build_query():
+    """Builds SQL query for fetching recent 5m signals"""
     return f"""
     with core as (
         select
@@ -52,14 +52,14 @@ def build_query(tf, start_ts, end_ts):
             r.rsi_14,
             r.stoch_rsi_k,
             r.stoch_rsi_d
-        from v_signal_delta_{tf} d
-        left join v_signal_cvd_{tf} c on c.symbol = d.symbol and c.signal_time = d.signal_time
-        left join v_vwap_24h v on v.symbol = d.symbol
+        from v_signal_delta_5m d
+        left join v_signal_cvd_5m c on c.symbol = d.symbol and c.signal_time = d.signal_time
+        left join v_vwap_5m v on v.symbol = d.symbol
         left join v_funding_rates f on f.symbol = d.symbol
         left join v_open_interest o on o.symbol = d.symbol
         left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
         left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
-        where d.signal_time between '{start_ts}' and '{end_ts}'
+        where d.signal_time > now() - interval '{TIME_WINDOW_HOURS} hours'
         order by d.signal_time desc
         limit {LIMIT_ROWS}
     )
@@ -67,77 +67,67 @@ def build_query(tf, start_ts, end_ts):
     """
 
 # ========= FETCH + UPSERT =========
-def fetch_and_upsert(tf, start_ts, end_ts):
-    q = build_query(tf, start_ts, end_ts)
+def fetch_and_upsert():
+    """Fetch data and upsert into Supabase table"""
+    q = build_query()
     attempt = 0
 
     while attempt < MAX_RETRIES:
         try:
-            res = sb.rpc("exec_sql", {"sql": q}).execute()
+            # Run RPC safely with timeout handling
+            try:
+                res = sb.rpc("exec_sql", {"sql": q}).execute()
+            except Timeout:
+                print("[error] RPC timeout — query took too long.")
+                return 0
+
             data = res.data or []
             if not data:
-                print(f"[skip:{tf}] No rows between {start_ts} → {end_ts}")
+                print("[skip] No data returned.")
                 return 0
 
             now_ts = datetime.now(timezone.utc).isoformat()
             for r in data:
                 r["last_updated_at"] = now_ts
-                b15, b1h, b1d = add_buckets(r["signal_time"])
-                r["bucket_15m"] = b15.isoformat()
-                r["bucket_1h"] = b1h.isoformat()
-                r["bucket_1d"] = b1d.isoformat()
-                r["timeframe"] = tf
+                bucket_5m = add_buckets(r["signal_time"])
+                r["bucket_5m"] = bucket_5m.isoformat()
 
             allowed = [
                 "symbol", "signal_time", "delta_strength", "delta_direction",
                 "cvd_strength", "cvd_direction", "vwap_deviation", "funding_rate",
                 "open_interest", "price_close", "trade_volume",
                 "rsi_14", "stoch_rsi_k", "stoch_rsi_d",
-                "bucket_15m", "bucket_1h", "bucket_1d",
-                "timeframe", "last_updated_at"
+                "bucket_5m", "last_updated_at"
             ]
             filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
             sb.table(TABLE_NAME).upsert(
-                filtered, on_conflict=["symbol", "timeframe", "signal_time"]
+                filtered, on_conflict=["symbol", "signal_time"]
             ).execute()
 
-            print(f"[ok:{tf}] Upserted {len(filtered)} rows ({start_ts} → {end_ts})")
+            print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
             return len(filtered)
 
         except Exception as e:
             attempt += 1
-            print(f"[error:{tf}] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            print(f"[error] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
             if attempt < MAX_RETRIES:
                 print(f"→ Retrying in {RETRY_DELAY}s...")
                 time.sleep(RETRY_DELAY)
             else:
-                print(f"[fail:{tf}] Giving up after {MAX_RETRIES} attempts.")
+                print(f"[fail] Giving up after {MAX_RETRIES} attempts.")
                 return 0
 
-# ========= MAIN LOOP =========
+# ========= MAIN =========
 def main():
-    print(f"[start] Market structure TF aggregation at {datetime.now(timezone.utc).isoformat()}")
-    print("[debug] using on_conflict = ['symbol', 'timeframe', 'signal_time']")
+    print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
+    print("[debug] using on_conflict = ['symbol', 'signal_time']")
 
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(hours=BATCH_HOURS)
-    summary = {tf: 0 for tf in TIMEFRAMES}
-
-    current = start_time
-    while current < end_time:
-        chunk_end = min(current + timedelta(hours=CHUNK_HOURS), end_time)
-        for tf in TIMEFRAMES:
-            rows = fetch_and_upsert(tf, current.isoformat(), chunk_end.isoformat())
-            summary[tf] += rows
-            print(f"[chunk:{tf}] {rows} rows processed ({current} → {chunk_end})\n")
-        current = chunk_end
-
+    total_rows = fetch_and_upsert()
     print("========== SUMMARY ==========")
-    for tf, count in summary.items():
-        print(f"Total rows inserted ({tf}): {count}")
+    print(f"Total rows upserted: {total_rows}")
     print("================================")
-    print("[complete] All timeframes updated.")
+    print("[complete] 5m aggregation finished.")
 
 if __name__ == "__main__":
     main()
