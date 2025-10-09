@@ -19,7 +19,7 @@ CHUNK_HOURS = 1       # process each 1-hour block separately
 TABLE_NAME = "signal_market_structure_agg_tf"
 TIMEFRAMES = ["15m", "1h", "1d"]
 MAX_RETRIES = 3
-RETRY_DELAY = 5       # seconds between retries
+RETRY_DELAY = 0.5       # seconds between retries
 
 # ========= HELPERS =========
 def add_buckets(ts):
