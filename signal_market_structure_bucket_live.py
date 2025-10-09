@@ -1,6 +1,8 @@
 import os
+import time
 import requests
 from datetime import datetime, timezone, timedelta
+from requests.exceptions import Timeout
 from supabase import create_client, Client
 
 # ========= ENV VARS =========
