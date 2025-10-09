@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime, timezone, timedelta
 from supabase import create_client
 
@@ -15,6 +16,8 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 LIMIT_ROWS = 2000
 TIME_WINDOW_HOURS = 12  # how far back to fetch
 TABLE_NAME = "signal_market_structure_agg_5m"
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds between retries
 
 # ========= HELPERS =========
 def add_buckets(ts):
@@ -57,39 +60,62 @@ def build_query():
     select * from core;
     """
 
-# ========= MAIN LOOP =========
+# ========= FETCH + UPSERT =========
+def fetch_and_upsert():
+    q = build_query()
+    attempt = 0
+
+    while attempt < MAX_RETRIES:
+        try:
+            res = sb.rpc("exec_sql", {"sql": q}).execute()
+            data = res.data or []
+            if not data:
+                print("[skip] No data returned.")
+                return 0
+
+            now_ts = datetime.now(timezone.utc).isoformat()
+            for r in data:
+                r["last_updated_at"] = now_ts
+                bucket_5m = add_buckets(r["signal_time"])
+                r["bucket_5m"] = bucket_5m.isoformat()
+
+            allowed = [
+                "symbol", "signal_time", "delta_strength", "delta_direction",
+                "cvd_strength", "cvd_direction", "vwap_deviation", "funding_rate",
+                "open_interest", "price_close", "trade_volume",
+                "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "bucket_5m", "last_updated_at"
+            ]
+            filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
+
+            sb.table(TABLE_NAME).upsert(
+                filtered, on_conflict=["symbol", "signal_time"]
+            ).execute()
+
+            print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
+            return len(filtered)
+
+        except Exception as e:
+            attempt += 1
+            print(f"[error] Attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES:
+                print(f"→ Retrying in {RETRY_DELAY}s...")
+                time.sleep(RETRY_DELAY)
+            else:
+                print(f"[fail] Giving up after {MAX_RETRIES} attempts.")
+                return 0
+
+# ========= MAIN =========
 def main():
     print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
-    q = build_query()
-    try:
-        res = sb.rpc("exec_sql", {"sql": q}).execute()
-        data = res.data or []
-        if not data:
-            print("[skip] No data returned.")
-            return
+    print("[debug] using on_conflict = ['symbol', 'signal_time']")
 
-        now_ts = datetime.now(timezone.utc).isoformat()
-        for r in data:
-            r["last_updated_at"] = now_ts
-            bucket_5m = add_buckets(r["signal_time"])
-            r["bucket_5m"] = bucket_5m.isoformat()
-
-        allowed = [
-            "symbol", "signal_time", "delta_strength", "delta_direction",
-            "cvd_strength", "cvd_direction", "vwap_deviation", "funding_rate",
-            "open_interest", "price_close", "trade_volume",
-            "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "bucket_5m", "last_updated_at"
-        ]
-        filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
-
-        sb.table("signal_market_structure_agg_5m").upsert(
-            filtered, on_conflict=["symbol", "timeframe", "signal_time"]
-        ).execute()
-        print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
-
-    except Exception as e:
-        print(f"[error] 5m agg: {e}")
+    total_rows = fetch_and_upsert()
+    print("========== SUMMARY ==========")
+    print(f"Total rows upserted: {total_rows}")
+    print("================================")
+    print("[complete] 5m aggregation finished.")
 
 if __name__ == "__main__":
     main()
+
 
