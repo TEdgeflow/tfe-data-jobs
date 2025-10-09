@@ -13,7 +13,8 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-BATCH_HOURS = 6
+BATCH_HOURS = 6       # total window (past 6 hours)
+CHUNK_HOURS = 1       # process 1 hour at a time
 TABLE_NAME = "signal_market_structure_agg_tf"
 TIMEFRAMES = ["15m", "1h", "1d"]
 
@@ -55,6 +56,7 @@ def build_query(tf, start_ts, end_ts):
         left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
         left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
         where d.signal_time between '{start_ts}' and '{end_ts}'
+        order by d.signal_time desc
         limit {LIMIT_ROWS}
     )
     select * from core;
@@ -77,7 +79,7 @@ def fetch_and_upsert(tf, start_ts, end_ts):
             r["bucket_15m"] = b15.isoformat()
             r["bucket_1h"] = b1h.isoformat()
             r["bucket_1d"] = b1d.isoformat()
-            r["timeframe"] = tf  # <-- added this so each row stores its timeframe explicitly
+            r["timeframe"] = tf
 
         allowed = [
             "symbol", "signal_time", "delta_strength", "delta_direction",
@@ -92,7 +94,7 @@ def fetch_and_upsert(tf, start_ts, end_ts):
         sb.table(TABLE_NAME).upsert(
             filtered, on_conflict=["symbol", "timeframe", "signal_time"]
         ).execute()
-        print(f"[ok:{tf}] Upserted {len(filtered)} rows")
+        print(f"[ok:{tf}] Upserted {len(filtered)} rows ({start_ts} → {end_ts})")
         return len(filtered)
 
     except Exception as e:
@@ -102,12 +104,17 @@ def fetch_and_upsert(tf, start_ts, end_ts):
 # ========= MAIN LOOP =========
 def main():
     print(f"[start] Market structure TF aggregation at {datetime.now(timezone.utc).isoformat()}")
+
     end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(hours=BATCH_HOURS)
 
-    for tf in TIMEFRAMES:
-        rows = fetch_and_upsert(tf, start_time.isoformat(), end_time.isoformat())
-        print(f"[done:{tf}] {rows} rows processed\n")
+    current = start_time
+    while current < end_time:
+        chunk_end = min(current + timedelta(hours=CHUNK_HOURS), end_time)
+        for tf in TIMEFRAMES:
+            rows = fetch_and_upsert(tf, current.isoformat(), chunk_end.isoformat())
+            print(f"[chunk:{tf}] {rows} rows processed ({current} → {chunk_end})\n")
+        current = chunk_end
 
     print("[complete] All timeframes updated.")
 
