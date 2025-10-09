@@ -1,7 +1,9 @@
 import os
 import time
 from datetime import datetime, timezone
-from supabase import create_client
+from supabase import create_client, Client
+import httpx
+from requests.exceptions import Timeout
 
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -10,12 +12,13 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing Supabase credentials")
 
-sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-sb.postgrest.timeout(60000)  # 60-second timeout to prevent RPC timeouts
+# ========= CLIENT WITH TIMEOUT =========
+http = httpx.Client(timeout=60.0)  # 60 seconds global HTTP timeout
+sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options={"http_client": http})
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-TIME_WINDOW_HOURS = 0.5  # Look back only 30 minutes (freshest data)
+TIME_WINDOW_HOURS = 0.5  # Fetch the freshest 30 minutes only
 TABLE_NAME = "signal_market_structure_agg_5m"
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds between retries
@@ -29,9 +32,9 @@ def add_buckets(ts):
         dt = ts
     return dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
 
-# ========= QUERY =========
+# ========= QUERY BUILDER =========
 def build_query():
-    """Builds SQL query for fetching 5m signals"""
+    """Builds SQL query for fetching recent 5m signals"""
     return f"""
     with core as (
         select
@@ -65,13 +68,19 @@ def build_query():
 
 # ========= FETCH + UPSERT =========
 def fetch_and_upsert():
-    """Fetch data and upsert into Supabase"""
+    """Fetch data and upsert into Supabase table"""
     q = build_query()
     attempt = 0
 
     while attempt < MAX_RETRIES:
         try:
-            res = sb.rpc("exec_sql", {"sql": q}).execute()
+            # Run RPC safely with timeout handling
+            try:
+                res = sb.rpc("exec_sql", {"sql": q}).execute()
+            except Timeout:
+                print("[error] RPC timeout — query took too long.")
+                return 0
+
             data = res.data or []
             if not data:
                 print("[skip] No data returned.")
@@ -87,7 +96,8 @@ def fetch_and_upsert():
                 "symbol", "signal_time", "delta_strength", "delta_direction",
                 "cvd_strength", "cvd_direction", "vwap_deviation", "funding_rate",
                 "open_interest", "price_close", "trade_volume",
-                "rsi_14", "stoch_rsi_k", "stoch_rsi_d", "bucket_5m", "last_updated_at"
+                "rsi_14", "stoch_rsi_k", "stoch_rsi_d",
+                "bucket_5m", "last_updated_at"
             ]
             filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
@@ -121,5 +131,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
