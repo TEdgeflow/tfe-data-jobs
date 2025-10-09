@@ -104,7 +104,8 @@ def fetch_and_upsert(tf, start_ts, end_ts):
 # ========= MAIN LOOP =========
 def main():
     print(f"[start] Market structure TF aggregation at {datetime.now(timezone.utc).isoformat()}")
-
+    print("[debug] using on_conflict = ['symbol', 'timeframe', 'signal_time']")
+    
     end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(hours=BATCH_HOURS)
 
