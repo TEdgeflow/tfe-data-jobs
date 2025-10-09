@@ -15,7 +15,6 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 # ✅ Manual Supabase Client (SDK v2+ compatible)
 from gotrue import SyncGoTrueClient
 from postgrest import SyncPostgrestClient
-from realtime import SyncRealtimeClient
 from storage3 import SyncStorageClient
 from supabase._sync.client import SyncClient
 
@@ -25,7 +24,6 @@ sb = SyncClient(
     auth_client=SyncGoTrueClient(f"{SUPABASE_URL}/auth/v1", SUPABASE_KEY),
     storage_client=SyncStorageClient(f"{SUPABASE_URL}/storage/v1", SUPABASE_KEY),
     postgrest_client=SyncPostgrestClient(f"{SUPABASE_URL}/rest/v1", SUPABASE_KEY),
-    realtime_client=SyncRealtimeClient(f"{SUPABASE_URL}/realtime/v1", SUPABASE_KEY),
 )
 
 # ✅ 60-second RPC timeout (to prevent query freezes)
