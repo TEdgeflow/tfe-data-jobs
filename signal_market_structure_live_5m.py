@@ -23,7 +23,7 @@ print("[init] Supabase client connected successfully.")
 
 # ========= CONFIG =========
 LIMIT_ROWS = 2000
-TIME_WINDOW_HOURS = 0.5  # Fetch last 30 minutes
+TIME_WINDOW_HOURS = 0.5  # Fetch the freshest 30 minutes only
 TABLE_NAME = "signal_market_structure_agg_5m"
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds between retries
@@ -78,7 +78,6 @@ def fetch_and_upsert():
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # Run RPC safely
             res = sb.rpc("exec_sql", {"sql": q}).execute()
             data = res.data or []
 
@@ -101,8 +100,10 @@ def fetch_and_upsert():
             ]
             filtered = [{k: v for k, v in r.items() if k in allowed} for r in data]
 
+            # ✅ Fixed ON CONFLICT format
             sb.table(TABLE_NAME).upsert(
-                filtered, on_conflict=["symbol", "signal_time"]
+                filtered,
+                on_conflict="symbol,signal_time",  # pass as string to match PostgREST
             ).execute()
 
             print(f"[ok] Upserted {len(filtered)} rows to {TABLE_NAME}")
@@ -122,7 +123,7 @@ def fetch_and_upsert():
 # ========= MAIN =========
 def main():
     print(f"[start] Market structure 5m aggregation at {datetime.now(timezone.utc).isoformat()}")
-    print("[debug] using on_conflict = ['symbol', 'signal_time']")
+    print("[debug] using on_conflict = 'symbol,signal_time'")
 
     total_rows = fetch_and_upsert()
     print("========== SUMMARY ==========")
