@@ -56,6 +56,7 @@ def build_query(tf, start_ts, end_ts):
         left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
         where d.signal_time between '{start_ts}' and '{end_ts}'
         limit {LIMIT_ROWS}
+    )
     select * from core;
     """
 
@@ -76,6 +77,7 @@ def fetch_and_upsert(tf, start_ts, end_ts):
             r["bucket_15m"] = b15.isoformat()
             r["bucket_1h"] = b1h.isoformat()
             r["bucket_1d"] = b1d.isoformat()
+            r["timeframe"] = tf  # <-- added this so each row stores its timeframe explicitly
 
         allowed = [
             "symbol", "signal_time", "delta_strength", "delta_direction",
@@ -111,4 +113,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
