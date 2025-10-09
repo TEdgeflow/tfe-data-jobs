@@ -55,9 +55,8 @@ def build_query(tf, start_ts, end_ts):
         left join binance_ohlcv p on p.symbol = d.symbol and p.interval = '1h'
         left join v_ai_signal_rsi r on r.symbol = d.symbol and r.timeframe = '1d'
         where d.signal_time between '{start_ts}' and '{end_ts}'
-        limit {LIMIT_ROWS}
-    )
-    select *, '{tf}' as timeframe from core;
+        limit {LIMIT_ROWS}ofcource we need 
+    select * from core;
     """
 
 # ========= FETCH + UPSERT =========
