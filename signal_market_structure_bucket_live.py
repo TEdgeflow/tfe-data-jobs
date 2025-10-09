@@ -39,13 +39,13 @@ def build_query(tf: str, window_hours: int):
     return f"""
     with core as (
         select
-            d.symbol,
-            '{tf}' as timeframe,
-            d.signal_time,
+            d.symbol::text,
+            '{tf}'::text as timeframe,
+            d.signal_time::timestamptz,
             d.strength_value as delta_strength,
-            d.direction as delta_direction,
+            d.direction::text as delta_direction,
             c.strength_value as cvd_strength,
-            c.direction as cvd_direction,
+            c.direction::text as cvd_direction,
             v.vwap_dist_pct as vwap_deviation,
             f.funding_rate,
             o.open_interest,
@@ -67,6 +67,7 @@ def build_query(tf: str, window_hours: int):
     )
     select * from core;
     """
+
 
 # ========= FETCH + UPSERT =========
 def fetch_and_upsert(tf: str):
