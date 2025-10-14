@@ -80,8 +80,11 @@ def upsert(symbol, buy_vol, sell_vol, delta, funding_rate, open_interest, vwap):
         "open_interest": open_interest,
         "vwap": vwap,
     }
-    sb.table("orderflow_cvd").upsert(row).execute()
-    print(f"[upsert] {symbol} Δ={delta:.2f} FR={funding_rate} OI={open_interest} VWAP={vwap}")
+    try:
+        res = sb.table("orderflow_cvd").upsert(row).execute()
+        print(f"[upsert] {symbol} Δ={delta:.2f} FR={funding_rate} OI={open_interest} VWAP={vwap} → {res}")
+    except Exception as e:
+        print(f"[upsert-error] {symbol}: {e}")
 
 # ========= MAIN LOOP =========
 def main():
