@@ -7,7 +7,7 @@ from supabase import create_client, Client
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "200"))
+LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "100"))
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
@@ -80,11 +80,8 @@ def upsert(symbol, buy_vol, sell_vol, delta, funding_rate, open_interest, vwap):
         "open_interest": open_interest,
         "vwap": vwap,
     }
-    try:
-        res = sb.table("orderflow_cvd").upsert(row).execute()
-        print(f"[upsert] {symbol} Δ={delta:.2f} FR={funding_rate} OI={open_interest} VWAP={vwap} → {res}")
-    except Exception as e:
-        print(f"[upsert-error] {symbol}: {e}")
+    sb.table("orderflow_cvd").upsert(row).execute()
+    print(f"[upsert] {symbol} Δ={delta:.2f} FR={funding_rate} OI={open_interest} VWAP={vwap}")
 
 # ========= MAIN LOOP =========
 def main():
@@ -111,6 +108,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
