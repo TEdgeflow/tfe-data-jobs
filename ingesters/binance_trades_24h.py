@@ -65,9 +65,7 @@ def ingest_trades():
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
 
-
- 
-    # cleanup old data after each full pass
+  # cleanup old data after each full pass
     cleanup_old_rows()
 
 if __name__ == "__main__":
