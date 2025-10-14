@@ -66,7 +66,7 @@ def ingest_trades():
                 })
 
             if rows:
-                sb.table("binance_trades_24h").upsert(rows, on_conflict="trades_unique").execute()
+                sb.table("binance_trades_24h").upsert(rows, on_conflict=["symbol", "trade_id"]).execute()
                 print(f"[{symbol}] Inserted {len(rows)} trades")
 
         except Exception as e:
