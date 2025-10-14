@@ -60,7 +60,7 @@ def ingest_trades():
                     "ts": datetime.fromtimestamp(t["time"]/1000.0).isoformat()
                 })
             if rows:
-                sb.table("binance_trades").upsert(rows).execute()
+                sb.table("binance_trades_24h").upsert(rows).execute()
                 print(f"[{symbol}] Inserted {len(rows)} trades")
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
