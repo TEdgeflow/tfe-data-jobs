@@ -28,14 +28,7 @@ def get_symbols():
         s["symbol"] for s in resp.json()["symbols"]
         if s["contractType"] == "PERPETUAL" and s["quoteAsset"] == "USDT"
     ]
-    print(f"[debug] Found {len(symbols)} valid USDT-PERP symbols.")
-            return symbols[:LIMIT_SYMBOLS]
-        except Exception as e:
-            print(f"[warn] Binance exchangeInfo failed (try {attempt+1}/2):", e)
-            time.sleep(2)
-
-    print("[error] All attempts to fetch symbols failed.")
-    return []
+    return symbols[:LIMIT_SYMBOLS]
 
 def fetch_orderflow(symbol):
     """Get buy/sell volume and delta from trades"""
@@ -115,6 +108,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
