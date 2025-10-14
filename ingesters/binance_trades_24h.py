@@ -65,15 +65,12 @@ def ingest_trades():
                     "ts": ts.isoformat()
                 })
 
-            if rows:
-                sb.table("binance_trades_24h").upsert(rows, on_conflict=["symbol", "trade_id"]).execute()
+                        if rows:
+                sb.table("binance_trades_24h").upsert(rows).execute()
                 print(f"[{symbol}] Inserted {len(rows)} trades")
-
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
-            time.sleep(0.3)  # slight delay to respect API limits
-
-        
+ 
     # cleanup old data after each full pass
     cleanup_old_rows()
 
