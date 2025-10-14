@@ -27,7 +27,7 @@ def get_all_usdt_symbols():
     ]
 
 def fetch_trades(symbol, limit=1000):
-    """Fetch latest Binance trades for a given symbol."""
+    """Fetch latest Binance trades 24h for a given symbol."""
     url = f"{BINANCE_URL}/trades"
     r = requests.get(url, params={"symbol": symbol, "limit": limit}, timeout=10)
     r.raise_for_status()
@@ -36,7 +36,7 @@ def fetch_trades(symbol, limit=1000):
 def cleanup_old_rows():
     """Delete rows older than 24 hours."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=TIME_LIMIT_HOURS)).isoformat()
-    query = f"delete from binance_trades where ts < '{cutoff}'"
+    query = f"delete from binance_trades_24h  where ts < '{cutoff}'"
     print(f"[CLEANUP] Removing rows older than {cutoff}")
     try:
         sb.rpc("exec_sql", {"query": query}).execute()
@@ -68,7 +68,7 @@ def ingest_trades():
                 })
 
             if rows:
-                sb.table("binance_trades").upsert(rows, on_conflict=["symbol", "trade_id"]).execute()
+                sb.table("binance_trades_24h").upsert(rows, on_conflict=["symbol", "trade_id"]).execute()
                 print(f"[{symbol}] Inserted {len(rows)} trades")
 
         except Exception as e:
