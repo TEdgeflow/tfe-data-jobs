@@ -10,10 +10,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BINANCE_URL = "https://api.binance.com/api/v3"
-
 TIME_LIMIT_HOURS = int(os.getenv("TIME_LIMIT_HOURS", 24))
 print(f"[CONFIG] Keeping trades for the last {TIME_LIMIT_HOURS} hours")
-
 
 def get_all_usdt_symbols():
     """Fetch all active USDT pairs from Binance"""
