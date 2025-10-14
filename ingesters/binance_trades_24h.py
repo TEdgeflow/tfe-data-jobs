@@ -23,7 +23,7 @@ def get_all_usdt_symbols():
     ]
 
 def fetch_trades(symbol, limit=1000):
-    """Fetch latest Binance trades 24h for a given symbol."""
+    """Fetch latest binance_trades_24h for a given symbol."""
     url = f"{BINANCE_URL}/trades"
     r = requests.get(url, params={"symbol": symbol, "limit": limit}, timeout=10)
     r.raise_for_status()
