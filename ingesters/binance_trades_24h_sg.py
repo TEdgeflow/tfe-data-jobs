@@ -39,7 +39,7 @@ def cleanup_old_rows():
     query = f"delete from binance_trades_24h  where ts < '{cutoff}'"
     print(f"[CLEANUP] Removing rows older than {cutoff}")
     try:
-        sb.rpc("exec_sql", {"query": query}).execute()
+        sb.rpc("exec_sql_v2", {"query": query}).execute()
     except Exception as e:
         print(f"[WARN] Cleanup skipped: {e}")
 
@@ -73,7 +73,7 @@ def ingest_trades():
 
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
-            time.sleep(0.2)
+            time.sleep(0.3)
 
     # cleanup old data after each full pass
     cleanup_old_rows()
