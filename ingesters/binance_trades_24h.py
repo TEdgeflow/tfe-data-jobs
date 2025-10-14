@@ -48,12 +48,7 @@ def ingest_trades():
         try:
             trades = fetch_trades(symbol)
             rows = []
-
             for t in trades:
-                ts = datetime.fromtimestamp(t["time"] / 1000.0, tz=timezone.utc)
-                if ts < datetime.now(timezone.utc) - timedelta(hours=TIME_LIMIT_HOURS):
-                    continue  # skip anything older than 24h
-
                 rows.append({
                     "symbol": symbol,
                     "trade_id": t["id"],
@@ -62,14 +57,15 @@ def ingest_trades():
                     "quote_qty": float(t["quoteQty"]),
                     "side": "BUY" if not t["isBuyerMaker"] else "SELL",
                     "is_buyer_maker": t["isBuyerMaker"],
-                    "ts": ts.isoformat()
+                    "ts": datetime.fromtimestamp(t["time"]/1000.0).isoformat()
                 })
-
-                        if rows:
-                sb.table("binance_trades_24h").upsert(rows).execute()
+            if rows:
+                sb.table("binance_trades").upsert(rows).execute()
                 print(f"[{symbol}] Inserted {len(rows)} trades")
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
+
+
  
     # cleanup old data after each full pass
     cleanup_old_rows()
