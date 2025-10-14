@@ -1,0 +1,77 @@
+import os, time, requests
+from datetime import datetime, timedelta, timezone
+from supabase import create_client
+
+# ========= CONFIG =========
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+TABLE_NAME = "binance_trades_24h"
+sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+BINANCE_BASE = "https://api.binance.com"
+FETCH_INTERVAL_MIN = 5   # fetch every 5 minutes
+SYMBOL_REFRESH_HOURS = 1 # refresh symbol list every hour
+
+def get_active_symbols():
+    """Pull all active symbols from Binance spot market."""
+    r = requests.get(f"{BINANCE_BASE}/api/v3/exchangeInfo", timeout=15)
+    r.raise_for_status()
+    info = r.json()
+    symbols = [
+        s["symbol"] for s in info["symbols"]
+        if s["status"] == "TRADING" and s.get("isSpotTradingAllowed")
+    ]
+    print(f"[INFO] Loaded {len(symbols)} symbols")
+    return symbols
+
+def fetch_trades(symbol):
+    """Fetch latest 1000 trades for a symbol."""
+    r = requests.get(f"{BINANCE_BASE}/api/v3/trades", params={"symbol": symbol, "limit": 1000}, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    rows = []
+    for d in data:
+        rows.append({
+            "symbol": symbol,
+            "trade_id": d["id"],
+            "price": float(d["price"]),
+            "qty": float(d["qty"]),
+            "quote_qty": float(d["quoteQty"]),
+            "is_buyer_maker": d["isBuyerMaker"],
+            "ts": datetime.fromtimestamp(d["time"] / 1000, tz=timezone.utc)
+        })
+    return rows
+
+def insert_trades(rows):
+    if rows:
+        sb.table(TABLE_NAME).upsert(rows, on_conflict=["symbol","trade_id"]).execute()
+
+def cleanup_old_rows():
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    sb.rpc("exec_sql", {"query": f"delete from {TABLE_NAME} where ts < '{cutoff}'"}).execute()
+
+def main():
+    symbols = get_active_symbols()
+    last_refresh = datetime.now(timezone.utc)
+
+    while True:
+        now = datetime.now(timezone.utc)
+        # refresh symbol list every hour
+        if (now - last_refresh).total_seconds() >= SYMBOL_REFRESH_HOURS * 3600:
+            symbols = get_active_symbols()
+            last_refresh = now
+
+        for sym in symbols:
+            try:
+                trades = fetch_trades(sym)
+                insert_trades(trades)
+            except Exception as e:
+                print(f"[WARN] {sym}: {e}")
+                time.sleep(0.1)  # short delay to avoid ban
+
+        cleanup_old_rows()
+        print(f"[OK] Cycle complete at {datetime.utcnow().isoformat()}")
+        time.sleep(FETCH_INTERVAL_MIN * 60)
+
+if __name__ == "__main__":
+    main()
