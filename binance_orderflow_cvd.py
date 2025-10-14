@@ -7,7 +7,7 @@ from supabase import create_client, Client
 # ========= ENV VARS =========
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "100"))
+LIMIT_SYMBOLS = int(os.getenv("LIMIT_SYMBOLS", "200"))
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY")
