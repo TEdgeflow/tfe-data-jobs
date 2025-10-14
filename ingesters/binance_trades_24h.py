@@ -42,7 +42,6 @@ def cleanup_old_rows():
         sb.rpc("exec_sql_v2", {"query": query}).execute()
     except Exception as e:
         print(f"[WARN] Cleanup skipped: {e}")
-
 def ingest_trades():
     symbols = get_all_usdt_symbols()
     print(f"[INFO] Found {len(symbols)} USDT pairs")
@@ -51,6 +50,7 @@ def ingest_trades():
         try:
             trades = fetch_trades(symbol)
             rows = []
+
             for t in trades:
                 ts = datetime.fromtimestamp(t["time"] / 1000.0, tz=timezone.utc)
                 if ts < datetime.now(timezone.utc) - timedelta(hours=TIME_LIMIT_HOURS):
@@ -67,18 +67,18 @@ def ingest_trades():
                     "ts": ts.isoformat()
                 })
 
-          if rows:
-    sb.table("binance_trades_24h").upsert(
-        rows,
-        on_conflict=["symbol", "trade_id"]
-    ).execute()
-    print(f"[{symbol}] Inserted {len(rows)} trades")
-
+            if rows:
+                sb.table("binance_trades_24h").upsert(
+                    rows,
+                    on_conflict=["symbol", "trade_id"]
+                ).execute()
+                print(f"[{symbol}] Inserted {len(rows)} trades")
 
         except Exception as e:
             print(f"[ERROR] {symbol}: {e}")
-            time.sleep(0.3)
+            time.sleep(0.3)  # slight delay to respect API limits
 
+        
     # cleanup old data after each full pass
     cleanup_old_rows()
 
