@@ -11,6 +11,8 @@ sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BINANCE_URL = "https://api.binance.com/api/v3"
 
+TIME_LIMIT_HOURS = 24  # Keep only trades from the last 24 hours
+
 def get_all_usdt_symbols():
     """Fetch all active USDT pairs from Binance"""
     url = f"{BINANCE_URL}/exchangeInfo"
