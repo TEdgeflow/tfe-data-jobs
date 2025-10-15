@@ -37,6 +37,7 @@ daybias: python ai_signals/daybias_signals.py
 worker: python -u ingesters/binance_ohlcv_with_rsi.py
 worker: python refresh_market_structure.py
 worker: python ingesters/binance_trades_24h.py
+worker: python ingesters/binance_marketcap_ingest.py
 
 
 
