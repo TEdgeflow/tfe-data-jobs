@@ -1,7 +1,7 @@
 import os
 import time
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from supabase import create_client, Client
 
 # ---- Setup ----
@@ -54,8 +54,18 @@ def fetch_market_data(symbols):
 def upsert_market_data(rows):
     if not rows:
         return
-    sb.table("binance_market_data").upsert(rows).execute()
+    sb.table("binance_market_cap").upsert(rows).execute()
     print(f"[UPSERT] {len(rows)} Binance market rows inserted/updated")
+
+# ---- Cleanup old data ----
+def cleanup_old_rows():
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    query = f"delete from binance_market_cap where ts < '{cutoff}'"
+    try:
+        sb.rpc("exec_sql_v2", {"query": query}).execute()
+        print(f"[CLEANUP] Removed rows older than 7 days")
+    except Exception as e:
+        print(f"[WARN] Cleanup skipped: {e}")
 
 # ---- Main Loop ----
 def main():
@@ -65,11 +75,13 @@ def main():
             print(f"[INFO] Found {len(symbols)} USDT pairs")
             data = fetch_market_data(symbols)
             upsert_market_data(data)
-            print(f"[DONE] Binance market data cycle completed.")
+            cleanup_old_rows()
+            print(f"[DONE] Binance market cap cycle completed.")
         except Exception as e:
             print(f"[FATAL] {e}")
         time.sleep(1800)  # run every 30 minutes
 
 if __name__ == "__main__":
     main()
+
 
