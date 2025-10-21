@@ -71,23 +71,39 @@ async def stream_orderbook(shard_id, symbols):
     stream_url = "wss://fstream.binance.com/stream?streams=" + "/".join(
         [f"{s}@depth10@500ms" for s in symbols]
     )
+
+    backoff = 5  # start retry delay in seconds
     while True:
         try:
-            async with websockets.connect(stream_url, ping_interval=15, ping_timeout=15) as ws:
+            async with websockets.connect(
+                stream_url,
+                ping_interval=60,
+                ping_timeout=20,
+                close_timeout=10,
+                max_queue=500,
+            ) as ws:
                 print(f"✅ Connected shard {shard_id} with {len(symbols)} symbols")
+
+                backoff = 5  # reset backoff after successful connect
                 while True:
                     try:
-                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        msg = await asyncio.wait_for(ws.recv(), timeout=60)
                         data = json.loads(msg)
                         stream = data["stream"]
                         symbol = stream.split("@")[0]
                         await handle_message(symbol, data["data"])
                     except asyncio.TimeoutError:
-                        print(f"⚠️ Shard {shard_id}: no message for 30s, sending ping...")
+                        print(f"⚠️ Shard {shard_id}: no data for 60s, sending ping...")
                         await ws.ping()
+                    except websockets.ConnectionClosed:
+                        print(f"⚠️ Shard {shard_id}: connection closed, breaking to reconnect...")
+                        break
+
         except Exception as e:
-            print(f"⚠️ Shard {shard_id} websocket error: {e}, retrying in 5s...")
-            await asyncio.sleep(5)
+            print(f"⚠️ Shard {shard_id} websocket error: {e}, retrying in {backoff}s...")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)  # exponential backoff up to 60s
+
 
 
 async def scheduler():
