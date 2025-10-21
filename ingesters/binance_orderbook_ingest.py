@@ -114,10 +114,22 @@ async def scheduler():
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    # 🔹 Create one WebSocket task per shard
-    for i, shard_symbols in enumerate(SHARDS):
-        loop.create_task(stream_orderbook(i, shard_symbols))
-    loop.create_task(scheduler())
-    loop.run_forever()
 
+    # ✅ Number shards starting at 1 for readability in logs
+    for i, shard_symbols in enumerate(SHARDS):
+        loop.create_task(stream_orderbook(i + 1, shard_symbols))
+
+    loop.create_task(scheduler())
+
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("🛑 Shutting down gracefully...")
+    except Exception as e:
+        print(f"❌ Unhandled error in main loop: {e}")
+    finally:
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+        loop.stop()
+        loop.close()
 
