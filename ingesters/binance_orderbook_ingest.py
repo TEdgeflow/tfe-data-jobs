@@ -112,6 +112,27 @@ async def scheduler():
         await asyncio.sleep(BATCH_INTERVAL)
 
 
+async def watchdog():
+    """Simple watchdog that checks recent insert times every 10 minutes."""
+    while True:
+        try:
+            result = sb.table("binance_orderbook") \
+                .select("time") \
+                .order("time", desc=True) \
+                .limit(1) \
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                latest = result.data[0]["time"]
+                print(f"🕐 Watchdog check: latest insert at {latest}")
+            else:
+                print("⚠️ Watchdog warning: no data returned from binance_orderbook")
+        except Exception as e:
+            print(f"⚠️ Watchdog error: {e}")
+
+        await asyncio.sleep(600)  # every 10 minutes
+
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
