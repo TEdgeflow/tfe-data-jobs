@@ -114,53 +114,67 @@ async def handle_message(symbol, data):
 # ==========================================================
 # 🔹 WebSocket Stream (Fixed Payload)
 # ==========================================================
+import random
+
 async def stream_orderbook(shard_id, symbols):
-    """Stream orderbook updates from Binance and feed them into the buffer."""
-    stream_url = "wss://fstream.binance.com/stream?streams=" + "/".join(
-        [f"{s}@depth10@500ms" for s in symbols]
-    )
+    """Stream orderbook data for a shard with reconnect + rate limit handling."""
+    base_url = "wss://fstream.binance.com/stream?streams="
+    stream_url = base_url + "/".join([f"{s}@depth10@500ms" for s in symbols])
 
     backoff = 5  # start retry delay
+    reconnect_count = 0
+
     while True:
         try:
             async with websockets.connect(
                 stream_url,
-                ping_interval=15,
-                ping_timeout=15,
+                ping_interval=60,
+                ping_timeout=20,
                 close_timeout=10,
                 max_queue=500,
             ) as ws:
-                print(f"✅ Connected shard {shard_id} with {len(symbols)} symbols")
-                backoff = 5  # reset on successful connect
+                print(f"✅ Connected shard {shard_id} ({len(symbols)} symbols)")
 
+                backoff = 5  # reset after success
+                reconnect_count = 0
+
+                # small delay between symbols to avoid rate limit
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+
+                last_message = time.time()
                 while True:
                     try:
-                        msg = await asyncio.wait_for(ws.recv(), timeout=30)
+                        msg = await asyncio.wait_for(ws.recv(), timeout=60)
                         data = json.loads(msg)
-
-                        # Binance sends: {"stream": "btcusdt@depth10@500ms", "data": {...}}
-                        payload = data.get("data", {})
-                        if not payload:
-                            continue
-
                         stream = data.get("stream", "")
+                        payload = data.get("data", {})
+
                         symbol = stream.split("@")[0]
                         await handle_message(symbol, payload)
+                        last_message = time.time()
 
                     except asyncio.TimeoutError:
-                        print(f"⚠️ Shard {shard_id}: no data for 30s, sending ping...")
+                        # if idle for 60s, log heartbeat
+                        print(f"💤 Shard {shard_id} idle >60s, sending ping...")
                         await ws.ping()
+                        if time.time() - last_message > 180:
+                            print(f"⚠️ Shard {shard_id} no data >3m, restarting connection")
+                            break
+
                     except websockets.ConnectionClosed:
-                        print(f"⚠️ Shard {shard_id}: connection closed, reconnecting...")
-                        break
-                    except Exception as e:
-                        print(f"⚠️ Shard {shard_id}: internal error: {e}")
+                        print(f"⚠️ Shard {shard_id}: connection closed → reconnecting...")
                         break
 
         except Exception as e:
-            print(f"⚠️ Shard {shard_id} websocket error: {e}, retrying in {backoff}s...")
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            reconnect_count += 1
+            print(f"⚠️ Shard {shard_id} error: {e}, reconnect attempt #{reconnect_count}")
+
+            # randomized staggered delay to avoid hitting rate limits
+            delay = backoff + random.uniform(1, 4)
+            print(f"⏳ Waiting {delay:.1f}s before reconnect...")
+            await asyncio.sleep(delay)
+
+            backoff = min(backoff * 2, 60)  # exponential up to 60s
 
 
 # ==========================================================
