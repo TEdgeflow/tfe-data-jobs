@@ -198,20 +198,37 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 
 async def cleanup_old_rows():
-    """Deletes rows older than 7 days from binance_orderbook daily."""
+    """Deletes old rows in manageable batches."""
+    BATCH_SIZE = 20000  # delete 20k rows per loop
     while True:
         try:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-            print(f"🧹 Running cleanup: deleting rows older than {cutoff}")
+            print(f"🧹 Running batched cleanup for rows older than {cutoff}")
 
-            sb.table("binance_orderbook").delete().lt("time", cutoff).execute()
+            total_deleted = 0
+            while True:
+                result = sb.table("binance_orderbook") \
+                    .delete() \
+                    .lt("time", cutoff) \
+                    .limit(BATCH_SIZE) \
+                    .execute()
 
-            print(f"✅ Cleanup completed at {datetime.now(timezone.utc).isoformat()}")
+                deleted = len(result.data or [])
+                total_deleted += deleted
+
+                if deleted == 0:
+                    break  # no more to delete this round
+
+                print(f"🧩 Deleted batch of {deleted} rows (total {total_deleted})")
+                await asyncio.sleep(1)  # pause between batches
+
+            print(f"✅ Cleanup done — total {total_deleted} rows deleted")
+
         except Exception as e:
             print(f"⚠️ Cleanup failed: {e}")
 
-        # Sleep for 24 hours before next cleanup
-        await asyncio.sleep(86400)  # 86400 seconds = 1 day
+        await asyncio.sleep(86400)  # run daily
+
 
 
 # ==========================================================
