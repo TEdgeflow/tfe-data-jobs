@@ -57,20 +57,38 @@ async def save_batch():
 # ==========================================================
 # 🔹 Handle WebSocket Payloads
 # ==========================================================
+import time
+_last_debug = {}
+
 async def handle_message(symbol, data):
-    """Process a single Binance stream payload and queue rows."""
     global BUFFER, _last_debug
 
-    bids = data.get("bids", [])
-    asks = data.get("asks", [])
-    ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc).isoformat()
+    # Handle both 'data' and nested 'data.data' cases
+    if "data" in data:
+        data = data["data"]
 
-    # 🧠 Log symbol structure occasionally
+    # Sometimes Binance sends empty partial update → ignore if no bids/asks
+    bids = data.get("bids") or data.get("b") or []
+    asks = data.get("asks") or data.get("a") or []
+
+    # Extract timestamp safely
+    ts_val = data.get("E") or data.get("T") or time.time() * 1000
+    ts = datetime.fromtimestamp(ts_val / 1000, tz=timezone.utc).isoformat()
+
+    # Log every 10s per symbol, only if bids/asks missing or new pattern
     now = time.time()
-    if symbol not in _last_debug or now - _last_debug[symbol] > 5:
-        print(f"DEBUG {symbol.upper()} → keys={list(data.keys())}, bids={len(bids)}, asks={len(asks)}")
+    if symbol not in _last_debug or now - _last_debug[symbol] > 10:
+        print(
+            f"DEBUG {symbol.upper()} → keys={list(data.keys())}, "
+            f"bids={len(bids)}, asks={len(asks)}, event={data.get('e')}"
+        )
         _last_debug[symbol] = now
 
+    # If both sides empty, skip
+    if not bids and not asks:
+        return
+
+    # Build top-10 rows per side
     rows = []
     for i, (price, qty) in enumerate(bids[:10]):
         rows.append({
@@ -91,9 +109,7 @@ async def handle_message(symbol, data):
             "time": ts
         })
 
-    if rows:
-        BUFFER.extend(rows)
-
+    BUFFER.extend(rows)
 
 # ==========================================================
 # 🔹 WebSocket Stream (Fixed Payload)
