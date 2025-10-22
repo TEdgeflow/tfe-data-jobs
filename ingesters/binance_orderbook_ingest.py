@@ -33,12 +33,8 @@ async def save_batch():
             print(f"✅ Inserted {len(BUFFER)} rows")
         except Exception as e:
             print(f"❌ Insert failed: {e}")
+            print(f"Example row: {BUFFER[0] if BUFFER else 'EMPTY'}")
         BUFFER = []
-
-
-    except Exception as e:
-        print(f"❌ Insert failed: {e}")
-        print(f"Example row: {BUFFER[0] if BUFFER else 'EMPTY'}")
 
 
 async def handle_message(symbol, data):
