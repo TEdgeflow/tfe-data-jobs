@@ -37,12 +37,24 @@ async def save_batch():
         BUFFER = []
 
 
-async def handle_message(symbol, data):
-    global BUFFER
-    bids = data.get("bids", [])
-    asks = data.get("asks", [])
-    ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc).isoformat()
+import time
+_last_debug = {}  # store last log time per symbol
 
+async def handle_message(symbol, data):
+    global BUFFER, _last_debug
+
+    # Extract bids/asks safely (handles both old and new Binance formats)
+    bids = data.get("bids", []) or data.get("data", {}).get("bids", [])
+    asks = data.get("asks", []) or data.get("data", {}).get("asks", [])
+    ts = datetime.fromtimestamp(data.get("E", data.get("data", {}).get("E", 0)) / 1000, tz=timezone.utc).isoformat()
+
+    # 🧠 DEBUG every 5 seconds per symbol
+    now = time.time()
+    if symbol not in _last_debug or now - _last_debug[symbol] > 5:
+        print(f"DEBUG {symbol.upper()} → keys={list(data.keys())}, bids={len(bids)}, asks={len(asks)}")
+        _last_debug[symbol] = now
+
+    # Build rows if valid
     rows = []
     for i, (price, qty) in enumerate(bids[:10]):
         rows.append({
@@ -64,8 +76,8 @@ async def handle_message(symbol, data):
         })
 
     if rows:
-        print(f"[handle_message] {symbol.upper()} adding {len(rows)} rows, ts={ts}")
-    BUFFER.extend(rows)
+        BUFFER.extend(rows)
+
 
 
 async def stream_orderbook(shard_id, symbols):
