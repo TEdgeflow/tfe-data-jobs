@@ -217,6 +217,7 @@ if __name__ == "__main__":
 
     loop.create_task(scheduler())
     loop.create_task(watchdog())
+    loop.create_task(cleanup_old_rows())
 
     try:
         loop.run_forever()
