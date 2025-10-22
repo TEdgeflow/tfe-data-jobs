@@ -36,6 +36,11 @@ async def save_batch():
         BUFFER = []
 
 
+    except Exception as e:
+        print(f"❌ Insert failed: {e}")
+        print(f"Example row: {BUFFER[0] if BUFFER else 'EMPTY'}")
+
+
 async def handle_message(symbol, data):
     global BUFFER
     bids = data.get("bids", [])
