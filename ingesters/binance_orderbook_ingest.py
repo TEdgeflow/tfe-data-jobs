@@ -26,15 +26,23 @@ BATCH_INTERVAL = 1.0  # seconds
 
 
 async def save_batch():
-    global BUFFER
+    global BUFFER, rows_written, _last_stats
     if BUFFER:
         try:
             sb.table("binance_orderbook").insert(BUFFER).execute()
+            rows_written += len(BUFFER)
             print(f"✅ Inserted {len(BUFFER)} rows")
         except Exception as e:
             print(f"❌ Insert failed: {e}")
             print(f"Example row: {BUFFER[0] if BUFFER else 'EMPTY'}")
         BUFFER = []
+
+    # 🧠 Health print every 60 seconds
+    now = time.time()
+    if now - _last_stats > 60:
+        print(f"🩵 Health check → {rows_written:,} rows inserted in last 60s")
+        rows_written = 0
+        _last_stats = now
 
 
 import time
