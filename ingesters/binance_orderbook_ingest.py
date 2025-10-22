@@ -191,20 +191,6 @@ async def watchdog():
         await asyncio.sleep(600)  # every 10 minutes
 
 
-# ========= AUTO CLEANUP =========
-async def cleanup_old_rows():
-    """Deletes rows older than 7 days from binance_orderbook daily."""
-    while True:
-        try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-            print(f"🧹 Cleanup: deleting rows older than {cutoff}")
-            sb.table("binance_orderbook").delete().lt("time", cutoff).execute()
-            print(f"✅ Cleanup completed at {datetime.now(timezone.utc).isoformat()}")
-        except Exception as e:
-            print(f"⚠️ Cleanup failed: {e}")
-        await asyncio.sleep(86400)  # run once per day
-        
-
 # ==========================================================
 # 🔹 Entry Point
 # ==========================================================
@@ -217,7 +203,6 @@ if __name__ == "__main__":
 
     loop.create_task(scheduler())
     loop.create_task(watchdog())
-    loop.create_task(cleanup_old_rows())
 
     try:
         loop.run_forever()
@@ -230,6 +215,7 @@ if __name__ == "__main__":
             task.cancel()
         loop.stop()
         loop.close()
+
 
 
 
