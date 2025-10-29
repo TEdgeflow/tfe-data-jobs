@@ -69,7 +69,7 @@ def main():
     print("🚀 Starting signal_fast_engine_ai_summary worker...")
 
     # 1️⃣ Fetch rows that need summaries
-    response = sb.table("signal_fast_engine_ai_summary") \
+    response = sb.table("mm_signal_fast_engine_ai_summary") \
         .select("*") \
         .is_("ai_summary", "null") \
         .order("signal_time", desc=True) \
