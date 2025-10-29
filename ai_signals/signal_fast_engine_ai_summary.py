@@ -90,7 +90,7 @@ def main():
         if summary:
             print(f"📝 {row['symbol']} {row['timeframe']} → {summary}")
 
-            sb.table("signal_fast_engine_ai_summary").update({
+            sb.table("mm_signal_fast_engine_ai_summary").update({
                 "ai_summary": summary,
                 "last_updated": datetime.now(timezone.utc).isoformat()
             }).eq("id", row["id"]).execute()
