@@ -51,7 +51,7 @@ def summarize_signal(row):
             model="gpt-5-mini", 
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
-            max_tokens=80,
+            max_completion_tokens=80,
         )
 
         summary = response.choices[0].message.content.strip()
