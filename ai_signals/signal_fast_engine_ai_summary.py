@@ -50,7 +50,7 @@ def summarize_signal(row):
         response = client.chat.completions.create(
             model="gpt-5-mini", 
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
+            temperature=1,
             max_completion_tokens=80,
         )
 
